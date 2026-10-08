@@ -1,0 +1,16 @@
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+body { background-color: #f4f6f9; color: #333; }
+.navbar { background-color: #1e293b; color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+.navbar button { background: #ef4444; border: none; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+.container { max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+.card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 2rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+.form-group input, .form-group select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+.btn { background: #2563eb; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 4px; cursor: pointer; width: 100%; font-size: 1rem; }
+.btn:hover { background: #1d4ed8; }
+.btn-danger { background: #dc2626; padding: 0.3rem 0.6rem; }
+table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+table th, table td { padding: 0.75rem; border: 1px solid #e2e8f0; text-align: left; }
+table th { background: #f1f5f9; }
+.hidden { display: none; }
