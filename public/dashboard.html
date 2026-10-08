@@ -7,10 +7,11 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <nav class="navbar">
-    <h2>Fleet Management Dashboard</h2>
-    <div>
-      <span id="userInfo" style="margin-right: 15px;"></span>
+    <nav class="navbar">
+    <h2><span>🚚</span> Fleet<span class="accent">Tracker</span></h2>
+    <div class="nav-right">
+      <span id="userInfo" class="user-chip"></span>
+      <button id="themeBtn" class="icon-btn" title="Toggle theme">🌙</button>
       <button id="logoutBtn">Logout</button>
     </div>
   </nav>
@@ -19,10 +20,16 @@
     <div class="stats-grid" id="statsGrid"></div>
     <div id="docAlert" class="alert hidden"></div>
 
+    <div class="chart-grid">
+      <div class="card"><h3>Fleet Status</h3><div class="chart-box"><canvas id="statusChart"></canvas></div></div>
+      <div class="card"><h3>Monthly Spend (last 6 months)</h3><div class="chart-box"><canvas id="costChart"></canvas></div></div>
+    </div>
+
     <div class="tabs">
       <button class="tab active" data-tab="vehicles">Vehicles</button>
       <button class="tab" data-tab="documents">Documents</button>
       <button class="tab" data-tab="maintenance">Maintenance</button>
+            <button class="tab" data-tab="fuel">Fuel</button>
     </div>
 
     <section id="tab-vehicles">
@@ -135,6 +142,34 @@
         </div>
       </div>
     </section>
+        <section id="tab-fuel" class="hidden">
+      <div class="card">
+        <h3>Log Fuel</h3>
+        <form id="fuelForm" class="form-grid">
+          <select id="fPlate" required></select>
+          <input type="date" id="fDate" required title="Fill-up date">
+          <input type="number" id="fLiters" placeholder="Liters" min="0.1" step="0.01" required>
+          <input type="number" id="fCost" placeholder="Total cost" min="0" step="0.01" required>
+          <input type="number" id="fOdo" placeholder="Odometer (km)" min="0">
+          <input type="text" id="fStation" placeholder="Station (optional)">
+          <button type="submit" class="btn span-2">Log Fuel</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3>Fuel History</h3>
+          <strong id="fuelTotal"></strong>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Vehicle</th><th>Liters</th><th>Cost</th><th>Price/L</th><th>Odometer</th><th>Station</th><th>Logged By</th><th class="admin-only">Actions</th></tr>
+            </thead>
+            <tbody id="fuelTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 
     <div id="editModal" class="modal hidden">
@@ -157,6 +192,7 @@
       </form>
     </div>
   </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

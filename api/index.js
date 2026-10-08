@@ -9,6 +9,7 @@ const Vehicle = require('../models/Vehicle');
 
 const Document = require('../models/Document');
 const Maintenance = require('../models/Maintenance');
+const Fuel = require('../models/Fuel');
 
 const app = express();
 app.use(express.json());
@@ -213,20 +214,101 @@ app.delete('/api/maintenance/:id', authenticate, requireAdmin, async (req, res) 
   }
 });
 
+
+// --- FUEL LOG ---
+app.get('/api/fuel', authenticate, async (req, res) => {
+  try {
+    res.json(await Fuel.find().sort({ date: -1 }));
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.post('/api/fuel', authenticate, async (req, res) => {
+  try {
+    const { vehiclePlate, date, liters, cost, odometer, station } = req.body;
+    const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate });
+    if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number' });
+
+    const log = await Fuel.create({ vehiclePlate, date, liters, cost, odometer, station, loggedBy: req.user.name });
+
+    if (odometer > vehicle.mileage) {
+      vehicle.mileage = odometer;
+      await vehicle.save();
+    }
+    res.status(201).json(log);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.delete('/api/fuel/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const log = await Fuel.findByIdAndDelete(req.params.id);
+    if (!log) return res.status(404).json({ error: 'Fuel log not found' });
+    res.json({ message: 'Fuel log removed successfully' });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
 // --- STATS ---
 app.get('/api/stats', authenticate, async (req, res) => {
   try {
-    const [vehicles, docs, spend] = await Promise.all([
-      Vehicle.find().lean(),
-      Document.find().lean(),
-      Maintenance.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, count: { $sum: 1 } } }])
+    const since = new Date();
+    since.setUTCDate(1);
+    since.setUTCHours(0, 0, 0, 0);
+    since.setUTCMonth(since.getUTCMonth() - 5);
+
+    const monthly = (Model) => Model.aggregate([
+      { $match: { date: { $gte: since } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date' } }, total: { $sum: '$cost' } } }
     ]);
 
+    const [vehicles, docs, spend, fuelSpend, mMonthly, fMonthly, fuelLogs] = await Promise.all([
+      Vehicle.find().lean(),
+      Document.find().lean(),
+      Maintenance.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, count: { $sum: 1 } } }]),
+      Fuel.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, liters: { $sum: '$liters' } } }]),
+      monthly(Maintenance),
+      monthly(Fuel),
+      Fuel.find({ odometer: { $ne: null } }).lean()
+    ]);
+
+    // vehicles
     const byStatus = { 'Active': 0, 'In Maintenance': 0, 'Out of Service': 0 };
     vehicles.forEach(v => { byStatus[v.status] = (byStatus[v.status] || 0) + 1; });
-
-    const docStatuses = docs.map(d => Document.computeStatus(d.expiryDate));
     const totalMileage = vehicles.reduce((sum, v) => sum + (v.mileage || 0), 0);
+
+    // documents
+    const docStatuses = docs.map(d => Document.computeStatus(d.expiryDate));
+
+    // last 6 months of spend
+    const mMap = Object.fromEntries(mMonthly.map(x => [x._id, x.total]));
+    const fMap = Object.fromEntries(fMonthly.map(x => [x._id, x.total]));
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setUTCDate(1);
+      d.setUTCMonth(d.getUTCMonth() - i);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      months.push({
+        label: d.toLocaleString('en', { month: 'short', timeZone: 'UTC' }),
+        maintenance: mMap[key] || 0,
+        fuel: fMap[key] || 0
+      });
+    }
+
+    // fleet fuel efficiency (km per liter) from odometer readings
+    const byPlate = {};
+    fuelLogs.forEach(f => (byPlate[f.vehiclePlate] = byPlate[f.vehiclePlate] || []).push(f));
+    let km = 0, litres = 0;
+    Object.values(byPlate).forEach(list => {
+      if (list.length < 2) return;
+      list.sort((a, b) => a.odometer - b.odometer);
+      km += list[list.length - 1].odometer - list[0].odometer;
+      litres += list.slice(1).reduce((sum, f) => sum + f.liters, 0);
+    });
 
     res.json({
       totalVehicles: vehicles.length,
@@ -238,7 +320,13 @@ app.get('/api/stats', authenticate, async (req, res) => {
         expired: docStatuses.filter(s => s === 'Expired').length,
         expiringSoon: docStatuses.filter(s => s === 'Expiring Soon').length
       },
-      maintenance: { records: spend[0]?.count || 0, totalCost: spend[0]?.total || 0 }
+      maintenance: { records: spend[0]?.count || 0, totalCost: spend[0]?.total || 0 },
+      fuel: {
+        totalCost: fuelSpend[0]?.total || 0,
+        totalLiters: fuelSpend[0]?.liters || 0,
+        kmPerL: litres > 0 ? km / litres : 0
+      },
+      monthly: months
     });
   } catch (err) {
     handleError(res, err);

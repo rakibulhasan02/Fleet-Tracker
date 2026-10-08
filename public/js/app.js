@@ -1,3 +1,4 @@
+document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light';
 const API_URL = '/api';
 
 // Toggle Login / Register Views
@@ -73,10 +74,32 @@ function initDashboard() {
   const isAdmin = user.role === 'Admin';
   const $ = (id) => document.getElementById(id);
   let vehicles = [];
+    let lastStats = null;
+
+  // theme
+  const applyTheme = (t) => {
+    document.documentElement.dataset.theme = t;
+    localStorage.setItem('theme', t);
+    $('themeBtn').textContent = t === 'dark' ? '☀️' : '🌙';
+    if (lastStats) renderCharts(lastStats);
+  };
+  applyTheme(localStorage.getItem('theme') || 'light');
+  $('themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
+  // toast notifications
+  function toast(msg, type = 'success') {
+    let box = $('toasts');
+    if (!box) { box = document.createElement('div'); box.id = 'toasts'; document.body.appendChild(box); }
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.textContent = msg;
+    box.appendChild(t);
+    setTimeout(() => t.remove(), 3200);
+  }
 
   $('userInfo').innerText = `${user.name} (${user.role})`;
   if (!isAdmin) document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-  $('logoutBtn').onclick = () => { localStorage.clear(); window.location.href = 'index.html'; };
+    $('logoutBtn').onclick = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = 'index.html'; };
 
   // helpers
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -91,49 +114,91 @@ function initDashboard() {
       ...options,
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
     });
-    if (res.status === 401) { localStorage.clear(); window.location.href = 'index.html'; throw new Error('Session expired'); }
+        if (res.status === 401) { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = 'index.html'; throw new Error('Session expired'); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Request failed');
     return data;
   }
-  const send = (method, path, body) => api(path, { method, body: body ? JSON.stringify(body) : undefined });
-  const run = async (fn) => { try { await fn(); } catch (e) { if (e.message !== 'Session expired') alert(e.message); } };
+    const okMsg = { POST: 'Saved successfully', PUT: 'Changes saved', DELETE: 'Deleted' };
+  const send = async (method, path, body) => {
+    const data = await api(path, { method, body: body ? JSON.stringify(body) : undefined });
+    toast(okMsg[method] || 'Done');
+    return data;
+  };
+  const run = async (fn) => { try { await fn(); } catch (e) { if (e.message !== 'Session expired') toast(e.message, 'error'); } };
 
   // tabs
   document.querySelectorAll('.tab').forEach(btn => {
     btn.onclick = () => {
       document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
-      ['vehicles', 'documents', 'maintenance'].forEach(t => $(`tab-${t}`).classList.toggle('hidden', t !== btn.dataset.tab));
+      ['vehicles', 'documents', 'maintenance', 'fuel'].forEach(t => $(`tab-${t}`).classList.toggle('hidden', t !== btn.dataset.tab));
     };
   });
 
-  // stats
+    const charts = {};
+  function renderCharts(s) {
+    if (typeof Chart === 'undefined') return;
+    Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#64748b';
+    Object.values(charts).forEach(c => c.destroy());
+
+    charts.status = new Chart($('statusChart'), {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(s.byStatus),
+        datasets: [{ data: Object.values(s.byStatus), backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'], borderWidth: 0 }]
+      },
+      options: { maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom' } } }
+    });
+
+    charts.cost = new Chart($('costChart'), {
+      type: 'bar',
+      data: {
+        labels: s.monthly.map(m => m.label),
+        datasets: [
+          { label: 'Maintenance', data: s.monthly.map(m => m.maintenance), backgroundColor: '#6366f1', borderRadius: 6 },
+          { label: 'Fuel', data: s.monthly.map(m => m.fuel), backgroundColor: '#06b6d4', borderRadius: 6 }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true } }
+      }
+    });
+  }
+
   async function loadStats() {
     const s = await api('/stats');
+    lastStats = s;
     const attention = s.documents.expired + s.documents.expiringSoon;
     $('statsGrid').innerHTML = [
-      ['', s.totalVehicles, 'Total vehicles'],
-      ['green', s.byStatus['Active'], 'Active'],
-      ['amber', s.byStatus['In Maintenance'], 'In maintenance'],
-      ['red', s.byStatus['Out of Service'], 'Out of service'],
-      ['', `${s.avgMileage.toLocaleString()} km`, 'Avg. mileage'],
-      [attention ? 'red' : 'green', attention, 'Documents needing attention'],
-      ['', money(s.maintenance.totalCost), `Maintenance spend (${s.maintenance.records} records)`]
-    ].map(([c, v, l]) => `<div class="stat ${c}"><div class="value">${esc(v)}</div><div class="label">${esc(l)}</div></div>`).join('');
+      ['', '🚗', s.totalVehicles, 'Total vehicles'],
+      ['green', '✅', s.byStatus['Active'], 'Active'],
+      ['amber', '🔧', s.byStatus['In Maintenance'], 'In maintenance'],
+      ['red', '⛔', s.byStatus['Out of Service'], 'Out of service'],
+      ['', '🛣️', `${s.avgMileage.toLocaleString()} km`, 'Avg. mileage'],
+      ['', '⛽', s.fuel.kmPerL ? `${s.fuel.kmPerL.toFixed(1)} km/L` : '—', 'Fleet fuel efficiency'],
+      ['', '💰', money(s.maintenance.totalCost + s.fuel.totalCost), 'Total running cost'],
+      [attention ? 'red' : 'green', '📄', attention, 'Documents needing attention']
+    ].map(([c, icon, v, l]) => `
+      <div class="stat ${c}">
+        <div class="icon">${icon}</div>
+        <div><div class="value">${esc(v)}</div><div class="label">${esc(l)}</div></div>
+      </div>`).join('');
 
     const alertBox = $('docAlert');
     if (attention) {
       const parts = [];
       if (s.documents.expired) parts.push(`${s.documents.expired} expired`);
       if (s.documents.expiringSoon) parts.push(`${s.documents.expiringSoon} expiring within 30 days`);
-      alertBox.textContent = `Document alert: ${parts.join(', ')}. Check the Documents tab.`;
+      alertBox.textContent = `⚠️ Document alert: ${parts.join(', ')}. Check the Documents tab.`;
       alertBox.classList.toggle('danger', s.documents.expired > 0);
       alertBox.classList.remove('hidden');
     } else {
       alertBox.classList.add('hidden');
     }
+    renderCharts(s);
   }
-
   // vehicles
   function filteredVehicles() {
     const q = $('vehicleSearch').value.trim().toLowerCase();
@@ -149,7 +214,7 @@ function initDashboard() {
     $('vehicleTableBody').innerHTML = rows.length ? rows.map(v => `
       <tr>
         <td>${esc(v.name)}</td>
-        <td>${esc(v.plateNumber)}</td>
+                <td><span class="plate">${esc(v.plateNumber)}</span></td>
         <td>${esc(v.model)}</td>
         <td>${Number(v.mileage).toLocaleString()} km</td>
         <td>${badge(v.status, vehicleColor[v.status] || 'green')}</td>
@@ -167,6 +232,7 @@ function initDashboard() {
       : '<option value="">Add a vehicle first</option>';
     $('dPlate').innerHTML = options;
     $('mPlate').innerHTML = options;
+        $('fPlate').innerHTML = options;
   }
 
   async function loadVehicles() {
@@ -335,6 +401,53 @@ function initDashboard() {
     });
   };
 
+    // fuel
+  async function loadFuel() {
+    const logs = await api('/fuel');
+    const liters = logs.reduce((sum, l) => sum + (l.liters || 0), 0);
+    const cost = logs.reduce((sum, l) => sum + (l.cost || 0), 0);
+    $('fuelTotal').textContent = logs.length ? `${liters.toFixed(1)} L · ${money(cost)}` : '';
+    $('fuelTableBody').innerHTML = logs.length ? logs.map(l => `
+      <tr>
+        <td>${fmtDate(l.date)}</td>
+        <td><span class="plate">${esc(l.vehiclePlate)}</span></td>
+        <td>${Number(l.liters).toFixed(1)} L</td>
+        <td>${money(l.cost)}</td>
+        <td>${money(l.cost / l.liters)}</td>
+        <td>${l.odometer != null ? Number(l.odometer).toLocaleString() + ' km' : '-'}</td>
+        <td>${esc(l.station)}</td>
+        <td>${esc(l.loggedBy)}</td>
+        ${isAdmin ? `<td><button class="btn btn-danger" data-id="${esc(l._id)}">Delete</button></td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="9" class="empty">No fuel logged yet.</td></tr>`;
+  }
+
+  $('fDate').value = new Date().toISOString().slice(0, 10);
+  $('fuelForm').onsubmit = (e) => {
+    e.preventDefault();
+    run(async () => {
+      await send('POST', '/fuel', {
+        vehiclePlate: $('fPlate').value,
+        date: $('fDate').value,
+        liters: Number($('fLiters').value),
+        cost: Number($('fCost').value),
+        odometer: $('fOdo').value ? Number($('fOdo').value) : undefined,
+        station: $('fStation').value
+      });
+      e.target.reset();
+      $('fDate').value = new Date().toISOString().slice(0, 10);
+      await Promise.all([loadFuel(), loadVehicles(), loadStats()]);
+    });
+  };
+
+  $('fuelTableBody').onclick = (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    run(async () => {
+      if (!confirm('Remove this fuel log?')) return;
+      await send('DELETE', `/fuel/${btn.dataset.id}`);
+      await Promise.all([loadFuel(), loadStats()]);
+    });
+  };
   // initial load
-  run(() => Promise.all([loadVehicles(), loadDocuments(), loadMaintenance(), loadStats()]));
+    run(() => Promise.all([loadVehicles(), loadDocuments(), loadMaintenance(), loadFuel(), loadStats()]));
 }
