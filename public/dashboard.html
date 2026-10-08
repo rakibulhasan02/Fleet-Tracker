@@ -30,6 +30,9 @@
       <button class="tab" data-tab="documents">Documents</button>
       <button class="tab" data-tab="maintenance">Maintenance</button>
             <button class="tab" data-tab="fuel">Fuel</button>
+                  <button class="tab" data-tab="drivers">Drivers</button>
+      <button class="tab" data-tab="owners">Owners</button>
+      <button class="tab" data-tab="mechanics">Mechanics</button>
     </div>
 
     <section id="tab-vehicles">
@@ -45,7 +48,8 @@
             <option value="In Maintenance">In Maintenance</option>
             <option value="Out of Service">Out of Service</option>
           </select>
-          <input type="text" id="vDriver" placeholder="Assigned Driver Name">
+                    <select id="vDriver"></select>
+          <select id="vOwner"></select>
           <button type="submit" class="btn span-2">Add Vehicle</button>
         </form>
       </div>
@@ -69,7 +73,7 @@
             <thead>
               <tr>
                 <th>Name</th><th>Plate Number</th><th>Model</th><th>Mileage</th>
-                <th>Status</th><th>Driver</th><th class="admin-only">Actions</th>
+                <th>Status</th><th>Driver</th><th>Owner</th><th class="admin-only">Actions</th>
               </tr>
             </thead>
             <tbody id="vehicleTableBody"></tbody>
@@ -120,6 +124,7 @@
             <option>Repair</option>
             <option>Other</option>
           </select>
+                    <select id="mMechanic"></select>
           <input type="date" id="mDate" required title="Service date">
           <input type="number" id="mCost" placeholder="Cost" min="0" step="0.01">
           <input type="number" id="mMileage" placeholder="Mileage at service (km)" min="0">
@@ -170,6 +175,9 @@
         </div>
       </div>
     </section>
+        <section id="tab-drivers" class="hidden"></section>
+    <section id="tab-owners" class="hidden"></section>
+    <section id="tab-mechanics" class="hidden"></section>
   </div>
 
     <div id="editModal" class="modal hidden">
@@ -186,7 +194,8 @@
           <option value="In Maintenance">In Maintenance</option>
           <option value="Out of Service">Out of Service</option>
         </select>
-        <input type="text" id="eDriver" placeholder="Assigned Driver Name">
+                <select id="eDriver"></select>
+        <select id="eOwner"></select>
         <button type="submit" class="btn">Save Changes</button>
         <button type="button" id="editCancel" class="btn btn-secondary">Cancel</button>
       </form>

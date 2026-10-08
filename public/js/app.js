@@ -131,7 +131,7 @@ function initDashboard() {
   document.querySelectorAll('.tab').forEach(btn => {
     btn.onclick = () => {
       document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
-      ['vehicles', 'documents', 'maintenance', 'fuel'].forEach(t => $(`tab-${t}`).classList.toggle('hidden', t !== btn.dataset.tab));
+            document.querySelectorAll('section[id^="tab-"]').forEach(sec => sec.classList.toggle('hidden', sec.id !== `tab-${btn.dataset.tab}`));
     };
   });
 
@@ -179,7 +179,10 @@ function initDashboard() {
       ['', '🛣️', `${s.avgMileage.toLocaleString()} km`, 'Avg. mileage'],
       ['', '⛽', s.fuel.kmPerL ? `${s.fuel.kmPerL.toFixed(1)} km/L` : '—', 'Fleet fuel efficiency'],
       ['', '💰', money(s.maintenance.totalCost + s.fuel.totalCost), 'Total running cost'],
-      [attention ? 'red' : 'green', '📄', attention, 'Documents needing attention']
+      [attention ? 'red' : 'green', '📄', attention, 'Documents needing attention'],
+            ['', '🧑‍✈️', s.people.drivers, 'Drivers'],
+      ['', '🏢', s.people.owners, 'Owners'],
+      ['', '🛠️', s.people.mechanics, 'Mechanics']
     ].map(([c, icon, v, l]) => `
       <div class="stat ${c}">
         <div class="icon">${icon}</div>
@@ -200,12 +203,12 @@ function initDashboard() {
     renderCharts(s);
   }
   // vehicles
-  function filteredVehicles() {
+   function filteredVehicles() {
     const q = $('vehicleSearch').value.trim().toLowerCase();
     const status = $('vehicleFilter').value;
     return vehicles.filter(v =>
       (!status || v.status === status) &&
-      (!q || [v.name, v.plateNumber, v.model, v.assignedDriver].some(x => String(x || '').toLowerCase().includes(q)))
+      (!q || [v.name, v.plateNumber, v.model, v.assignedDriver, v.owner].some(x => String(x || '').toLowerCase().includes(q)))
     );
   }
 
@@ -214,16 +217,17 @@ function initDashboard() {
     $('vehicleTableBody').innerHTML = rows.length ? rows.map(v => `
       <tr>
         <td>${esc(v.name)}</td>
-                <td><span class="plate">${esc(v.plateNumber)}</span></td>
+        <td><span class="plate">${esc(v.plateNumber)}</span></td>
         <td>${esc(v.model)}</td>
         <td>${Number(v.mileage).toLocaleString()} km</td>
         <td>${badge(v.status, vehicleColor[v.status] || 'green')}</td>
         <td>${esc(v.assignedDriver)}</td>
+        <td>${esc(v.owner)}</td>
         ${isAdmin ? `<td>
           <button class="btn btn-edit" data-action="edit" data-id="${esc(v._id)}">Edit</button>
           <button class="btn btn-danger" data-action="delete" data-id="${esc(v._id)}">Delete</button>
         </td>` : ''}
-      </tr>`).join('') : `<tr><td colspan="7" class="empty">No vehicles found.</td></tr>`;
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">No vehicles found.</td></tr>`;
   }
 
   function fillPlateSelects() {
@@ -239,6 +243,8 @@ function initDashboard() {
     vehicles = await api('/vehicles');
     renderVehicles();
     fillPlateSelects();
+        renderPeople('drivers');
+    renderPeople('owners');
   }
 
   $('vehicleSearch').oninput = renderVehicles;
@@ -253,7 +259,8 @@ function initDashboard() {
         model: $('vModel').value,
         mileage: Number($('vMileage').value),
         status: $('vStatus').value,
-        assignedDriver: $('vDriver').value || 'Unassigned'
+        assignedDriver: $('vDriver').value || 'Unassigned',
+                owner: $('vOwner').value || 'Unassigned'
       });
       e.target.reset();
       await Promise.all([loadVehicles(), loadStats()]);
@@ -280,7 +287,8 @@ function initDashboard() {
     $('eModel').value = v.model;
     $('eMileage').value = v.mileage;
     $('eStatus').value = v.status;
-    $('eDriver').value = v.assignedDriver === 'Unassigned' ? '' : v.assignedDriver;
+        setSelect('eDriver', v.assignedDriver || 'Unassigned');
+    setSelect('eOwner', v.owner || 'Unassigned');
     $('editModal').classList.remove('hidden');
   }
   const closeEdit = () => $('editModal').classList.add('hidden');
@@ -295,7 +303,8 @@ function initDashboard() {
         model: $('eModel').value,
         mileage: Number($('eMileage').value),
         status: $('eStatus').value,
-        assignedDriver: $('eDriver').value || 'Unassigned'
+        assignedDriver: $('eDriver').value || 'Unassigned',
+                owner: $('eOwner').value || 'Unassigned'
       });
       closeEdit();
       await Promise.all([loadVehicles(), loadStats()]);
@@ -305,8 +314,8 @@ function initDashboard() {
   // CSV export
   $('exportBtn').onclick = () => {
     const cell = (x) => `"${String(x ?? '').replace(/"/g, '""')}"`;
-    const csv = [['Name', 'Plate Number', 'Model', 'Mileage (km)', 'Status', 'Driver']]
-      .concat(filteredVehicles().map(v => [v.name, v.plateNumber, v.model, v.mileage, v.status, v.assignedDriver]))
+       const csv = [['Name', 'Plate Number', 'Model', 'Mileage (km)', 'Status', 'Driver', 'Owner']]
+      .concat(filteredVehicles().map(v => [v.name, v.plateNumber, v.model, v.mileage, v.status, v.assignedDriver, v.owner]))
       .map(r => r.map(cell).join(',')).join('\r\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -358,6 +367,8 @@ function initDashboard() {
   // maintenance
   async function loadMaintenance() {
     const records = await api('/maintenance');
+        maintenanceRecords = records;
+    renderPeople('mechanics');
     const total = records.reduce((sum, r) => sum + (r.cost || 0), 0);
     $('maintenanceTotal').textContent = records.length ? `Total spend: ${money(total)}` : '';
     $('maintenanceTableBody').innerHTML = records.length ? records.map(r => `
@@ -365,6 +376,7 @@ function initDashboard() {
         <td>${fmtDate(r.date)}</td>
         <td>${esc(r.vehiclePlate)}</td>
         <td>${esc(r.type)}</td>
+                <td>${esc(r.mechanic) || '-'}</td>
         <td>${money(r.cost)}</td>
         <td>${r.mileageAtService != null ? Number(r.mileageAtService).toLocaleString() + ' km' : '-'}</td>
         <td>${esc(r.notes)}</td>
@@ -380,6 +392,7 @@ function initDashboard() {
       await send('POST', '/maintenance', {
         vehiclePlate: $('mPlate').value,
         type: $('mType').value,
+                mechanic: $('mMechanic').value,
         date: $('mDate').value,
         cost: Number($('mCost').value || 0),
         mileageAtService: $('mMileage').value ? Number($('mMileage').value) : undefined,
@@ -448,6 +461,185 @@ function initDashboard() {
       await Promise.all([loadFuel(), loadStats()]);
     });
   };
+    // ---------- drivers / owners / mechanics ----------
+  const PEOPLE = {
+    drivers: {
+      title: 'Driver', plural: 'Drivers', icon: '🧑‍✈️', extraLabel: 'Vehicles',
+      fields: [
+        { key: 'name', label: 'Full name' },
+        { key: 'phone', label: 'Phone' },
+        { key: 'licenseNumber', label: 'License number' },
+        { key: 'licenseExpiry', label: 'License expiry', type: 'date' },
+        { key: 'status', label: 'Status', type: 'select', options: ['Available', 'On Trip', 'On Leave'] }
+      ]
+    },
+    owners: {
+      title: 'Owner', plural: 'Owners', icon: '🏢', extraLabel: 'Vehicles',
+      fields: [
+        { key: 'name', label: 'Name / company' },
+        { key: 'phone', label: 'Phone' },
+        { key: 'email', label: 'Email', type: 'email', optional: true },
+        { key: 'address', label: 'Address', optional: true }
+      ]
+    },
+    mechanics: {
+      title: 'Mechanic', plural: 'Mechanics', icon: '🛠️', extraLabel: 'Jobs',
+      fields: [
+        { key: 'name', label: 'Full name' },
+        { key: 'phone', label: 'Phone' },
+        { key: 'specialty', label: 'Specialty', type: 'select', options: ['General', 'Engine', 'Electrical', 'Brakes', 'Tires', 'Body Work'] },
+        { key: 'workshop', label: 'Workshop', optional: true },
+        { key: 'hourlyRate', label: 'Hourly rate', type: 'number', optional: true }
+      ]
+    }
+  };
+  const directory = { drivers: [], owners: [], mechanics: [] };
+  const editing = {};
+  let maintenanceRecords = [];
+
+  const extraCount = {
+    drivers: (p) => vehicles.filter(v => v.assignedDriver === p.name).length,
+    owners: (p) => vehicles.filter(v => v.owner === p.name).length,
+    mechanics: (p) => maintenanceRecords.filter(r => r.mechanic === p.name).length
+  };
+
+  function setSelect(id, value) {
+    const el = $(id);
+    if (value && ![...el.options].some(o => o.value === value)) el.add(new Option(value, value));
+    el.value = value || (el.options[0] ? el.options[0].value : '');
+  }
+
+  function fillPersonSelects() {
+    const list = (items, first) => `<option value="${first[0]}">${first[1]}</option>` +
+      items.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    const drivers = list(directory.drivers, ['Unassigned', 'Unassigned']);
+    const owners = list(directory.owners, ['Unassigned', 'Unassigned']);
+    ['vDriver', 'eDriver'].forEach(id => { $(id).innerHTML = drivers; });
+    ['vOwner', 'eOwner'].forEach(id => { $(id).innerHTML = owners; });
+    $('mMechanic').innerHTML = list(directory.mechanics, ['', '— No mechanic —']);
+  }
+
+  function personCell(f, p) {
+    const val = p[f.key];
+    if (val == null || val === '') return '-';
+    if (f.key === 'licenseExpiry') {
+      const days = Math.ceil((new Date(val) - Date.now()) / 86400000);
+      const [txt, col] = days < 0 ? ['Expired', 'red'] : days <= 30 ? ['Expiring', 'amber'] : ['Valid', 'green'];
+      return `${fmtDate(val)} ${badge(txt, col)}`;
+    }
+    if (f.key === 'status') return badge(val, { 'Available': 'green', 'On Trip': 'amber', 'On Leave': 'red' }[val] || 'green');
+    if (f.key === 'hourlyRate') return money(val);
+    return esc(val);
+  }
+
+  function renderPeople(type) {
+    const cfg = PEOPLE[type];
+    const q = $(`p-${type}-search`).value.trim().toLowerCase();
+    const rows = directory[type].filter(p => !q || cfg.fields.some(f => String(p[f.key] ?? '').toLowerCase().includes(q)));
+    $(`p-${type}-body`).innerHTML = rows.length ? rows.map(p => `
+      <tr>
+        ${cfg.fields.map(f => `<td>${personCell(f, p)}</td>`).join('')}
+        <td>${extraCount[type](p)}</td>
+        ${isAdmin ? `<td>
+          <button class="btn btn-edit" data-action="edit" data-id="${esc(p._id)}">Edit</button>
+          <button class="btn btn-danger" data-action="delete" data-id="${esc(p._id)}">Delete</button>
+        </td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="${cfg.fields.length + 2}" class="empty">No ${cfg.plural.toLowerCase()} found.</td></tr>`;
+  }
+
+  async function loadPeople(type) {
+    directory[type] = await api(`/${type}`);
+    renderPeople(type);
+    fillPersonSelects();
+  }
+
+  function resetPersonForm(type) {
+    const cfg = PEOPLE[type];
+    editing[type] = null;
+    $(`p-${type}-form`).reset();
+    $(`p-${type}-heading`).textContent = `Add ${cfg.title}`;
+    $(`p-${type}-submit`).textContent = `Add ${cfg.title}`;
+    $(`p-${type}-cancel`).classList.add('hidden');
+  }
+
+  Object.entries(PEOPLE).forEach(([type, cfg]) => {
+    const input = (f) => f.type === 'select'
+      ? `<select id="p-${type}-${f.key}" title="${f.label}">${f.options.map(o => `<option>${o}</option>`).join('')}</select>`
+      : `<input id="p-${type}-${f.key}" type="${f.type || 'text'}" placeholder="${f.label}" title="${f.label}" ${f.optional ? '' : 'required'} ${f.type === 'number' ? 'min="0" step="0.01"' : ''}>`;
+
+    $(`tab-${type}`).innerHTML = `
+      <div class="card admin-only">
+        <h3 id="p-${type}-heading">Add ${cfg.title}</h3>
+        <form id="p-${type}-form" class="form-grid">
+          ${cfg.fields.map(input).join('')}
+          <button type="submit" id="p-${type}-submit" class="btn span-2">Add ${cfg.title}</button>
+          <button type="button" id="p-${type}-cancel" class="btn btn-secondary span-2 hidden">Cancel editing</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3>${cfg.icon} ${cfg.plural}</h3>
+          <div class="toolbar-controls"><input type="search" id="p-${type}-search" placeholder="Search ${cfg.plural.toLowerCase()}..."></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              ${cfg.fields.map(f => `<th>${f.label}</th>`).join('')}
+              <th>${cfg.extraLabel}</th>
+              <th class="admin-only">Actions</th>
+            </tr></thead>
+            <tbody id="p-${type}-body"></tbody>
+          </table>
+        </div>
+      </div>`;
+
+    if (!isAdmin) $(`tab-${type}`).querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+
+    $(`p-${type}-search`).oninput = () => renderPeople(type);
+    $(`p-${type}-cancel`).onclick = () => resetPersonForm(type);
+
+    $(`p-${type}-form`).onsubmit = (e) => {
+      e.preventDefault();
+      run(async () => {
+        const body = {};
+        cfg.fields.forEach(f => {
+          const v = $(`p-${type}-${f.key}`).value;
+          body[f.key] = f.type === 'number' ? Number(v || 0) : v;
+        });
+        if (editing[type]) await send('PUT', `/${type}/${editing[type]}`, body);
+        else await send('POST', `/${type}`, body);
+        resetPersonForm(type);
+        await Promise.all([loadPeople(type), loadStats()]);
+      });
+    };
+
+    $(`p-${type}-body`).onclick = (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const p = directory[type].find(x => x._id === btn.dataset.id);
+      if (btn.dataset.action === 'edit' && p) {
+        editing[type] = p._id;
+        cfg.fields.forEach(f => {
+          const val = p[f.key] ?? '';
+          $(`p-${type}-${f.key}`).value = f.type === 'date' ? String(val).slice(0, 10) : val;
+        });
+        $(`p-${type}-heading`).textContent = `Edit ${cfg.title}`;
+        $(`p-${type}-submit`).textContent = 'Save changes';
+        $(`p-${type}-cancel`).classList.remove('hidden');
+        $(`p-${type}-form`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      if (btn.dataset.action === 'delete') run(async () => {
+        if (!confirm(`Remove this ${cfg.title.toLowerCase()}?`)) return;
+        await send('DELETE', `/${type}/${btn.dataset.id}`);
+        await Promise.all([loadPeople(type), loadStats()]);
+      });
+    };
+
+    renderPeople(type);
+  });
   // initial load
-    run(() => Promise.all([loadVehicles(), loadDocuments(), loadMaintenance(), loadFuel(), loadStats()]));
+      run(() => Promise.all([
+    loadPeople('drivers'), loadPeople('owners'), loadPeople('mechanics'),
+    loadVehicles(), loadDocuments(), loadMaintenance(), loadFuel(), loadStats()
+  ]));
 }

@@ -10,6 +10,9 @@ const Vehicle = require('../models/Vehicle');
 const Document = require('../models/Document');
 const Maintenance = require('../models/Maintenance');
 const Fuel = require('../models/Fuel');
+const Driver = require('../models/Driver');
+const Owner = require('../models/Owner');
+const Mechanic = require('../models/Mechanic');
 
 const app = express();
 app.use(express.json());
@@ -114,8 +117,8 @@ app.get('/api/vehicles', authenticate, async (req, res) => {
 // Create vehicle (Admin)
 app.post('/api/vehicles', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { name, plateNumber, model, status, mileage, assignedDriver } = req.body;
-    const newVehicle = await Vehicle.create({ name, plateNumber, model, status, mileage, assignedDriver });
+        const { name, plateNumber, model, status, mileage, assignedDriver, owner } = req.body;
+    const newVehicle = await Vehicle.create({ name, plateNumber, model, status, mileage, assignedDriver, owner });
     res.status(201).json(newVehicle);
   } catch (err) {
     handleError(res, err);
@@ -125,7 +128,7 @@ app.post('/api/vehicles', authenticate, requireAdmin, async (req, res) => {
 // Update vehicle (Admin)
 app.put('/api/vehicles/:id', authenticate, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['name', 'plateNumber', 'model', 'status', 'mileage', 'assignedDriver'];
+        const allowed = ['name', 'plateNumber', 'model', 'status', 'mileage', 'assignedDriver', 'owner'];
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     const vehicle = await Vehicle.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
@@ -186,12 +189,12 @@ app.get('/api/maintenance', authenticate, async (req, res) => {
 
 app.post('/api/maintenance', authenticate, async (req, res) => {
   try {
-    const { vehiclePlate, type, date, cost, mileageAtService, notes } = req.body;
+       const { vehiclePlate, type, mechanic, date, cost, mileageAtService, notes } = req.body;
     const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate });
     if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number' });
 
-    const record = await Maintenance.create({
-      vehiclePlate, type, date, cost, mileageAtService, notes, loggedBy: req.user.name
+       const record = await Maintenance.create({
+      vehiclePlate, type, mechanic, date, cost, mileageAtService, notes, loggedBy: req.user.name
     });
 
     if (mileageAtService > vehicle.mileage) {
@@ -252,6 +255,34 @@ app.delete('/api/fuel/:id', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+
+// --- DRIVERS / OWNERS / MECHANICS (generic CRUD) ---
+function crud(route, Model) {
+  app.get(`/api/${route}`, authenticate, async (req, res) => {
+    try { res.json(await Model.find().sort({ name: 1 })); } catch (err) { handleError(res, err); }
+  });
+  app.post(`/api/${route}`, authenticate, requireAdmin, async (req, res) => {
+    try { res.status(201).json(await Model.create(req.body)); } catch (err) { handleError(res, err); }
+  });
+  app.put(`/api/${route}/:id`, authenticate, requireAdmin, async (req, res) => {
+    try {
+      const item = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+      if (!item) return res.status(404).json({ error: 'Record not found' });
+      res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+  app.delete(`/api/${route}/:id`, authenticate, requireAdmin, async (req, res) => {
+    try {
+      const item = await Model.findByIdAndDelete(req.params.id);
+      if (!item) return res.status(404).json({ error: 'Record not found' });
+      res.json({ message: 'Record removed successfully' });
+    } catch (err) { handleError(res, err); }
+  });
+}
+crud('drivers', Driver);
+crud('owners', Owner);
+crud('mechanics', Mechanic);
+
 // --- STATS ---
 app.get('/api/stats', authenticate, async (req, res) => {
   try {
@@ -265,14 +296,17 @@ app.get('/api/stats', authenticate, async (req, res) => {
       { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date' } }, total: { $sum: '$cost' } } }
     ]);
 
-    const [vehicles, docs, spend, fuelSpend, mMonthly, fMonthly, fuelLogs] = await Promise.all([
+    const [vehicles, docs, spend, fuelSpend, mMonthly, fMonthly, fuelLogs, driverCount, ownerCount, mechanicCount] = await Promise.all([
       Vehicle.find().lean(),
       Document.find().lean(),
       Maintenance.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, count: { $sum: 1 } } }]),
       Fuel.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, liters: { $sum: '$liters' } } }]),
       monthly(Maintenance),
       monthly(Fuel),
-      Fuel.find({ odometer: { $ne: null } }).lean()
+            Fuel.find({ odometer: { $ne: null } }).lean(),
+      Driver.countDocuments(),
+      Owner.countDocuments(),
+      Mechanic.countDocuments()
     ]);
 
     // vehicles
@@ -326,7 +360,8 @@ app.get('/api/stats', authenticate, async (req, res) => {
         totalLiters: fuelSpend[0]?.liters || 0,
         kmPerL: litres > 0 ? km / litres : 0
       },
-      monthly: months
+      monthly: months,
+            people: { drivers: driverCount, owners: ownerCount, mechanics: mechanicCount }
     });
   } catch (err) {
     handleError(res, err);
