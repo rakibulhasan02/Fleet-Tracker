@@ -110,3 +110,23 @@ table tbody tr { transition: background .12s; } table tbody tr:hover { backgroun
 
 @media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } .navbar { padding: 0.8rem 1rem; } .user-chip { display: none; } }
 @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .span-2 { grid-column: span 1; } .toolbar-controls input { width: 100%; } }
+/* --- Login / Register branding --- */
+.auth-page { min-height: 100vh; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #06b6d4 100%); background-attachment: fixed; }
+.auth-container { max-width: 440px; margin-top: 2.5rem; }
+.auth-page .card { border: none; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3); border-radius: 18px; padding: 2rem; }
+.auth-page .card h2 { margin-bottom: 1rem; }
+.auth-page .form-group input, .auth-page .form-group select { padding: 0.65rem 0.75rem; border-radius: 10px; font-size: 0.95rem; }
+.auth-page .form-group input:focus, .auth-page .form-group select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); }
+.auth-page .btn { background: linear-gradient(135deg, #6366f1, #4f46e5); border-radius: 10px; font-weight: 600; padding: 0.75rem; }
+.auth-page .btn:hover { box-shadow: 0 6px 16px rgba(79, 70, 229, 0.45); }
+.auth-page a { color: #4f46e5; font-weight: 600; text-decoration: none; }
+
+.brand { text-align: center; color: white; margin-bottom: 1.75rem; }
+.brand-logo { width: 72px; height: 72px; margin: 0 auto 0.75rem; display: grid; place-items: center; font-size: 2.2rem; border-radius: 20px; background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(6px); border: 1px solid rgba(255, 255, 255, 0.35); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
+.brand h1 { font-size: 2.2rem; letter-spacing: -0.02em; font-weight: 800; }
+.brand h1 span { color: #a5f3fc; }
+.brand-tagline { font-size: 1.05rem; font-weight: 600; opacity: 0.95; margin-top: 0.15rem; }
+.brand-desc { font-size: 0.9rem; opacity: 0.85; margin: 0.5rem auto 0; max-width: 340px; line-height: 1.4; }
+.brand-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin-top: 0.9rem; }
+.brand-chips span { background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.3); padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+.auth-footer { text-align: center; color: rgba(255, 255, 255, 0.8); font-size: 0.8rem; padding-bottom: 1.5rem; }

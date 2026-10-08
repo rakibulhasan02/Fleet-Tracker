@@ -3,14 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fleet Tracker - Login</title>
+    <title>FleetTracker - Smart Fleet Management</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
-  <div class="container" style="max-width: 400px; margin-top: 5rem;">
+<body class="auth-page">
+  <div class="container auth-container">
+
+    <div class="brand">
+      <div class="brand-logo">🚚</div>
+      <h1>Fleet<span>Tracker</span></h1>
+      <p class="brand-tagline">Smart Fleet Management System</p>
+      <p class="brand-desc">Track vehicles, drivers, fuel, maintenance and documents in one place.</p>
+      <div class="brand-chips">
+        <span>🚗 Vehicles</span>
+        <span>🧑‍✈️ Drivers</span>
+        <span>⛽ Fuel</span>
+        <span>🛠️ Maintenance</span>
+        <span>📄 Documents</span>
+      </div>
+    </div>
     <!-- Login Card -->
     <div class="card" id="loginCard">
-      <h2>Fleet Tracker Login</h2>
+            <h2>Welcome back 👋</h2>
       <p style="margin-bottom: 1rem; color: #666;">Enter your credentials to access the portal.</p>
       <form id="loginForm">
         <div class="form-group">
@@ -61,7 +75,7 @@
       </p>
     </div>
   </div>
-
+  <p class="auth-footer">© FleetTracker · Fleet Management System</p>
   <script src="js/app.js"></script>
 </body>
 </html>
