@@ -15,43 +15,148 @@
     </div>
   </nav>
 
-  <div class="container">
-    <div class="card">
-      <h3>Add New Vehicle</h3>
-      <form id="vehicleForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-        <input type="text" id="vName" placeholder="Vehicle Name" required>
-        <input type="text" id="vPlate" placeholder="Plate Number" required>
-        <input type="text" id="vModel" placeholder="Model Year/Type" required>
-        <input type="number" id="vMileage" placeholder="Mileage (km)" required>
-        <select id="vStatus">
+    <div class="container">
+    <div class="stats-grid" id="statsGrid"></div>
+    <div id="docAlert" class="alert hidden"></div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="vehicles">Vehicles</button>
+      <button class="tab" data-tab="documents">Documents</button>
+      <button class="tab" data-tab="maintenance">Maintenance</button>
+    </div>
+
+    <section id="tab-vehicles">
+      <div class="card admin-only">
+        <h3>Add New Vehicle</h3>
+        <form id="vehicleForm" class="form-grid">
+          <input type="text" id="vName" placeholder="Vehicle Name" required>
+          <input type="text" id="vPlate" placeholder="Plate Number" required>
+          <input type="text" id="vModel" placeholder="Model Year/Type" required>
+          <input type="number" id="vMileage" placeholder="Mileage (km)" min="0" required>
+          <select id="vStatus">
+            <option value="Active">Active</option>
+            <option value="In Maintenance">In Maintenance</option>
+            <option value="Out of Service">Out of Service</option>
+          </select>
+          <input type="text" id="vDriver" placeholder="Assigned Driver Name">
+          <button type="submit" class="btn span-2">Add Vehicle</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="toolbar">
+          <h3>Registered Fleet</h3>
+          <div class="toolbar-controls">
+            <input type="search" id="vehicleSearch" placeholder="Search name, plate, driver...">
+            <select id="vehicleFilter">
+              <option value="">All statuses</option>
+              <option value="Active">Active</option>
+              <option value="In Maintenance">In Maintenance</option>
+              <option value="Out of Service">Out of Service</option>
+            </select>
+            <button id="exportBtn" class="btn btn-secondary">Export CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Plate Number</th><th>Model</th><th>Mileage</th>
+                <th>Status</th><th>Driver</th><th class="admin-only">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="vehicleTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-documents" class="hidden">
+      <div class="card admin-only">
+        <h3>Add Vehicle Document</h3>
+        <form id="documentForm" class="form-grid">
+          <select id="dPlate" required></select>
+          <select id="dType" required>
+            <option value="Insurance">Insurance</option>
+            <option value="Registration">Registration</option>
+            <option value="Permit">Permit</option>
+            <option value="Inspection">Inspection</option>
+          </select>
+          <input type="text" id="dTitle" placeholder="Title (e.g. Comprehensive Insurance)" required>
+          <input type="date" id="dExpiry" required title="Expiry date">
+          <button type="submit" class="btn span-2">Add Document</button>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Documents &amp; Expiry Dates</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Vehicle</th><th>Type</th><th>Title</th><th>Expires</th><th>Status</th><th class="admin-only">Actions</th></tr>
+            </thead>
+            <tbody id="documentTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-maintenance" class="hidden">
+      <div class="card">
+        <h3>Log Maintenance</h3>
+        <form id="maintenanceForm" class="form-grid">
+          <select id="mPlate" required></select>
+          <select id="mType" required>
+            <option>Oil Change</option>
+            <option>Tire Service</option>
+            <option>Brake Service</option>
+            <option>Inspection</option>
+            <option>Repair</option>
+            <option>Other</option>
+          </select>
+          <input type="date" id="mDate" required title="Service date">
+          <input type="number" id="mCost" placeholder="Cost" min="0" step="0.01">
+          <input type="number" id="mMileage" placeholder="Mileage at service (km)" min="0">
+          <input type="text" id="mNotes" placeholder="Notes (optional)">
+          <button type="submit" class="btn span-2">Log Service</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3>Maintenance History</h3>
+          <strong id="maintenanceTotal"></strong>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Vehicle</th><th>Service</th><th>Cost</th><th>Mileage</th><th>Notes</th><th>Logged By</th><th class="admin-only">Actions</th></tr>
+            </thead>
+            <tbody id="maintenanceTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+    <div id="editModal" class="modal hidden">
+    <div class="modal-content card">
+      <h3>Edit Vehicle</h3>
+      <form id="editForm" class="form-grid">
+        <input type="hidden" id="eId">
+        <input type="text" id="eName" placeholder="Vehicle Name" required>
+        <input type="text" id="ePlate" placeholder="Plate Number" required>
+        <input type="text" id="eModel" placeholder="Model Year/Type" required>
+        <input type="number" id="eMileage" placeholder="Mileage (km)" min="0" required>
+        <select id="eStatus">
           <option value="Active">Active</option>
           <option value="In Maintenance">In Maintenance</option>
           <option value="Out of Service">Out of Service</option>
         </select>
-        <input type="text" id="vDriver" placeholder="Assigned Driver Name">
-        <button type="submit" class="btn" style="grid-column: span 2;">Add Vehicle</button>
+        <input type="text" id="eDriver" placeholder="Assigned Driver Name">
+        <button type="submit" class="btn">Save Changes</button>
+        <button type="button" id="editCancel" class="btn btn-secondary">Cancel</button>
       </form>
     </div>
-
-    <div class="card">
-      <h3>Registered Fleet</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Plate Number</th>
-            <th>Model</th>
-            <th>Mileage</th>
-            <th>Status</th>
-            <th>Driver</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="vehicleTableBody"></tbody>
-      </table>
-    </div>
   </div>
-
   <script src="js/app.js"></script>
 </body>
 </html>

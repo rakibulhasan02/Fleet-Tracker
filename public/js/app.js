@@ -63,91 +63,278 @@ if (registerForm) {
 }
 
 // Dashboard Page Logic
-if (window.location.pathname.includes('dashboard.html')) {
+if (window.location.pathname.includes('dashboard.html')) initDashboard();
+
+function initDashboard() {
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+  if (!token) { window.location.href = 'index.html'; return; }
 
-  if (!token) {
-    window.location.href = 'index.html';
-  } else {
-    document.getElementById('userInfo').innerText = `${user.name} (${user.role})`;
-    loadVehicles();
-  }
+  const isAdmin = user.role === 'Admin';
+  const $ = (id) => document.getElementById(id);
+  let vehicles = [];
 
-  document.getElementById('logoutBtn').onclick = () => {
-    localStorage.clear();
-    window.location.href = 'index.html';
-  };
+  $('userInfo').innerText = `${user.name} (${user.role})`;
+  if (!isAdmin) document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+  $('logoutBtn').onclick = () => { localStorage.clear(); window.location.href = 'index.html'; };
 
-  const vehicleForm = document.getElementById('vehicleForm');
-  vehicleForm.onsubmit = async (e) => {
-    e.preventDefault();
-    const body = {
-      name: document.getElementById('vName').value,
-      plateNumber: document.getElementById('vPlate').value,
-      model: document.getElementById('vModel').value,
-      mileage: Number(document.getElementById('vMileage').value),
-      status: document.getElementById('vStatus').value,
-      assignedDriver: document.getElementById('vDriver').value || 'Unassigned'
-    };
+  // helpers
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const badge = (text, color) => `<span class="badge badge-${color}">${esc(text)}</span>`;
+  const vehicleColor = { 'Active': 'green', 'In Maintenance': 'amber', 'Out of Service': 'red' };
+  const docColor = { 'Valid': 'green', 'Expiring Soon': 'amber', 'Expired': 'red' };
 
-    const res = await fetch(`${API_URL}/vehicles`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(body)
+  async function api(path, options = {}) {
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
     });
-
-    if (res.ok) {
-      vehicleForm.reset();
-      loadVehicles();
-    } else {
-      const data = await res.json();
-      alert(data.error || 'Failed to add vehicle');
-    }
-  };
-}
-
-async function loadVehicles() {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_URL}/vehicles`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  if (!res.ok) return;
-
-  const vehicles = await res.json();
-  const tbody = document.getElementById('vehicleTableBody');
-  tbody.innerHTML = '';
-
-  vehicles.forEach(v => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${v.name}</td>
-      <td>${v.plateNumber}</td>
-      <td>${v.model}</td>
-      <td>${v.mileage} km</td>
-      <td><strong>${v.status}</strong></td>
-      <td>${v.assignedDriver}</td>
-      <td>
-        <button class="btn btn-danger" onclick="deleteVehicle('${v._id}')">Delete</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-async function deleteVehicle(id) {
-  if (!confirm('Are you sure you want to remove this vehicle?')) return;
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_URL}/vehicles/${id}`, {
-    method: 'DELETE',
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  if (res.ok) {
-    loadVehicles();
-  } else {
-    alert('Failed to delete vehicle');
+    if (res.status === 401) { localStorage.clear(); window.location.href = 'index.html'; throw new Error('Session expired'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
   }
+  const send = (method, path, body) => api(path, { method, body: body ? JSON.stringify(body) : undefined });
+  const run = async (fn) => { try { await fn(); } catch (e) { if (e.message !== 'Session expired') alert(e.message); } };
+
+  // tabs
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+      ['vehicles', 'documents', 'maintenance'].forEach(t => $(`tab-${t}`).classList.toggle('hidden', t !== btn.dataset.tab));
+    };
+  });
+
+  // stats
+  async function loadStats() {
+    const s = await api('/stats');
+    const attention = s.documents.expired + s.documents.expiringSoon;
+    $('statsGrid').innerHTML = [
+      ['', s.totalVehicles, 'Total vehicles'],
+      ['green', s.byStatus['Active'], 'Active'],
+      ['amber', s.byStatus['In Maintenance'], 'In maintenance'],
+      ['red', s.byStatus['Out of Service'], 'Out of service'],
+      ['', `${s.avgMileage.toLocaleString()} km`, 'Avg. mileage'],
+      [attention ? 'red' : 'green', attention, 'Documents needing attention'],
+      ['', money(s.maintenance.totalCost), `Maintenance spend (${s.maintenance.records} records)`]
+    ].map(([c, v, l]) => `<div class="stat ${c}"><div class="value">${esc(v)}</div><div class="label">${esc(l)}</div></div>`).join('');
+
+    const alertBox = $('docAlert');
+    if (attention) {
+      const parts = [];
+      if (s.documents.expired) parts.push(`${s.documents.expired} expired`);
+      if (s.documents.expiringSoon) parts.push(`${s.documents.expiringSoon} expiring within 30 days`);
+      alertBox.textContent = `Document alert: ${parts.join(', ')}. Check the Documents tab.`;
+      alertBox.classList.toggle('danger', s.documents.expired > 0);
+      alertBox.classList.remove('hidden');
+    } else {
+      alertBox.classList.add('hidden');
+    }
+  }
+
+  // vehicles
+  function filteredVehicles() {
+    const q = $('vehicleSearch').value.trim().toLowerCase();
+    const status = $('vehicleFilter').value;
+    return vehicles.filter(v =>
+      (!status || v.status === status) &&
+      (!q || [v.name, v.plateNumber, v.model, v.assignedDriver].some(x => String(x || '').toLowerCase().includes(q)))
+    );
+  }
+
+  function renderVehicles() {
+    const rows = filteredVehicles();
+    $('vehicleTableBody').innerHTML = rows.length ? rows.map(v => `
+      <tr>
+        <td>${esc(v.name)}</td>
+        <td>${esc(v.plateNumber)}</td>
+        <td>${esc(v.model)}</td>
+        <td>${Number(v.mileage).toLocaleString()} km</td>
+        <td>${badge(v.status, vehicleColor[v.status] || 'green')}</td>
+        <td>${esc(v.assignedDriver)}</td>
+        ${isAdmin ? `<td>
+          <button class="btn btn-edit" data-action="edit" data-id="${esc(v._id)}">Edit</button>
+          <button class="btn btn-danger" data-action="delete" data-id="${esc(v._id)}">Delete</button>
+        </td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="7" class="empty">No vehicles found.</td></tr>`;
+  }
+
+  function fillPlateSelects() {
+    const options = vehicles.length
+      ? vehicles.map(v => `<option value="${esc(v.plateNumber)}">${esc(v.plateNumber)} - ${esc(v.name)}</option>`).join('')
+      : '<option value="">Add a vehicle first</option>';
+    $('dPlate').innerHTML = options;
+    $('mPlate').innerHTML = options;
+  }
+
+  async function loadVehicles() {
+    vehicles = await api('/vehicles');
+    renderVehicles();
+    fillPlateSelects();
+  }
+
+  $('vehicleSearch').oninput = renderVehicles;
+  $('vehicleFilter').onchange = renderVehicles;
+
+  $('vehicleForm').onsubmit = (e) => {
+    e.preventDefault();
+    run(async () => {
+      await send('POST', '/vehicles', {
+        name: $('vName').value,
+        plateNumber: $('vPlate').value,
+        model: $('vModel').value,
+        mileage: Number($('vMileage').value),
+        status: $('vStatus').value,
+        assignedDriver: $('vDriver').value || 'Unassigned'
+      });
+      e.target.reset();
+      await Promise.all([loadVehicles(), loadStats()]);
+    });
+  };
+
+  $('vehicleTableBody').onclick = (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const v = vehicles.find(x => x._id === btn.dataset.id);
+    if (btn.dataset.action === 'edit' && v) openEdit(v);
+    if (btn.dataset.action === 'delete') run(async () => {
+      if (!confirm('Are you sure you want to remove this vehicle?')) return;
+      await send('DELETE', `/vehicles/${btn.dataset.id}`);
+      await Promise.all([loadVehicles(), loadStats()]);
+    });
+  };
+
+  // edit modal
+  function openEdit(v) {
+    $('eId').value = v._id;
+    $('eName').value = v.name;
+    $('ePlate').value = v.plateNumber;
+    $('eModel').value = v.model;
+    $('eMileage').value = v.mileage;
+    $('eStatus').value = v.status;
+    $('eDriver').value = v.assignedDriver === 'Unassigned' ? '' : v.assignedDriver;
+    $('editModal').classList.remove('hidden');
+  }
+  const closeEdit = () => $('editModal').classList.add('hidden');
+  $('editCancel').onclick = closeEdit;
+  $('editModal').onclick = (e) => { if (e.target === $('editModal')) closeEdit(); };
+  $('editForm').onsubmit = (e) => {
+    e.preventDefault();
+    run(async () => {
+      await send('PUT', `/vehicles/${$('eId').value}`, {
+        name: $('eName').value,
+        plateNumber: $('ePlate').value,
+        model: $('eModel').value,
+        mileage: Number($('eMileage').value),
+        status: $('eStatus').value,
+        assignedDriver: $('eDriver').value || 'Unassigned'
+      });
+      closeEdit();
+      await Promise.all([loadVehicles(), loadStats()]);
+    });
+  };
+
+  // CSV export
+  $('exportBtn').onclick = () => {
+    const cell = (x) => `"${String(x ?? '').replace(/"/g, '""')}"`;
+    const csv = [['Name', 'Plate Number', 'Model', 'Mileage (km)', 'Status', 'Driver']]
+      .concat(filteredVehicles().map(v => [v.name, v.plateNumber, v.model, v.mileage, v.status, v.assignedDriver]))
+      .map(r => r.map(cell).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `fleet-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  // documents
+  async function loadDocuments() {
+    const docs = await api('/documents');
+    $('documentTableBody').innerHTML = docs.length ? docs.map(d => {
+      const when = d.daysLeft < 0 ? `${-d.daysLeft} days ago` : `in ${d.daysLeft} days`;
+      return `<tr>
+        <td>${esc(d.vehiclePlate)}</td>
+        <td>${esc(d.documentType)}</td>
+        <td>${esc(d.title)}</td>
+        <td>${fmtDate(d.expiryDate)} <small>(${when})</small></td>
+        <td>${badge(d.status, docColor[d.status])}</td>
+        ${isAdmin ? `<td><button class="btn btn-danger" data-id="${esc(d._id)}">Delete</button></td>` : ''}
+      </tr>`;
+    }).join('') : `<tr><td colspan="6" class="empty">No documents tracked yet.</td></tr>`;
+  }
+
+  $('documentForm').onsubmit = (e) => {
+    e.preventDefault();
+    run(async () => {
+      await send('POST', '/documents', {
+        vehiclePlate: $('dPlate').value,
+        documentType: $('dType').value,
+        title: $('dTitle').value,
+        expiryDate: $('dExpiry').value
+      });
+      e.target.reset();
+      await Promise.all([loadDocuments(), loadStats()]);
+    });
+  };
+
+  $('documentTableBody').onclick = (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    run(async () => {
+      if (!confirm('Remove this document?')) return;
+      await send('DELETE', `/documents/${btn.dataset.id}`);
+      await Promise.all([loadDocuments(), loadStats()]);
+    });
+  };
+
+  // maintenance
+  async function loadMaintenance() {
+    const records = await api('/maintenance');
+    const total = records.reduce((sum, r) => sum + (r.cost || 0), 0);
+    $('maintenanceTotal').textContent = records.length ? `Total spend: ${money(total)}` : '';
+    $('maintenanceTableBody').innerHTML = records.length ? records.map(r => `
+      <tr>
+        <td>${fmtDate(r.date)}</td>
+        <td>${esc(r.vehiclePlate)}</td>
+        <td>${esc(r.type)}</td>
+        <td>${money(r.cost)}</td>
+        <td>${r.mileageAtService != null ? Number(r.mileageAtService).toLocaleString() + ' km' : '-'}</td>
+        <td>${esc(r.notes)}</td>
+        <td>${esc(r.loggedBy)}</td>
+        ${isAdmin ? `<td><button class="btn btn-danger" data-id="${esc(r._id)}">Delete</button></td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">No maintenance logged yet.</td></tr>`;
+  }
+
+  $('mDate').value = new Date().toISOString().slice(0, 10);
+  $('maintenanceForm').onsubmit = (e) => {
+    e.preventDefault();
+    run(async () => {
+      await send('POST', '/maintenance', {
+        vehiclePlate: $('mPlate').value,
+        type: $('mType').value,
+        date: $('mDate').value,
+        cost: Number($('mCost').value || 0),
+        mileageAtService: $('mMileage').value ? Number($('mMileage').value) : undefined,
+        notes: $('mNotes').value
+      });
+      e.target.reset();
+      $('mDate').value = new Date().toISOString().slice(0, 10);
+      await Promise.all([loadMaintenance(), loadVehicles(), loadStats()]);
+    });
+  };
+
+  $('maintenanceTableBody').onclick = (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    run(async () => {
+      if (!confirm('Remove this maintenance record?')) return;
+      await send('DELETE', `/maintenance/${btn.dataset.id}`);
+      await Promise.all([loadMaintenance(), loadStats()]);
+    });
+  };
+
+  // initial load
+  run(() => Promise.all([loadVehicles(), loadDocuments(), loadMaintenance(), loadStats()]));
 }

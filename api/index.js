@@ -7,6 +7,9 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Vehicle = require('../models/Vehicle');
 
+const Document = require('../models/Document');
+const Maintenance = require('../models/Maintenance');
+
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -37,7 +40,7 @@ app.use(async (req, res, next) => {
 // Middleware: Authentication Token Check
 const authenticate = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Unauthorized Access' });
+  if (!token) return res.status(401).json({ error: 'Invalid or expired token' });
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -48,12 +51,25 @@ const authenticate = (req, res, next) => {
   }
 };
 
+
+const requireAdmin = (req, res, next) => {
+  if (req.user?.role !== 'Admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
+};
+
+const handleError = (res, err) => {
+  if (err.code === 11000) return res.status(409).json({ error: 'A record with that unique value already exists' });
+  if (err.name === 'ValidationError' || err.name === 'CastError') return res.status(400).json({ error: err.message });
+  res.status(500).json({ error: err.message });
+};
+
 // --- AUTH ROUTES ---
 
 // Register
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ error: 'User already exists' });
 
@@ -94,24 +110,138 @@ app.get('/api/vehicles', authenticate, async (req, res) => {
   }
 });
 
-// Create vehicle
-app.post('/api/vehicles', authenticate, async (req, res) => {
+// Create vehicle (Admin)
+app.post('/api/vehicles', authenticate, requireAdmin, async (req, res) => {
   try {
     const { name, plateNumber, model, status, mileage, assignedDriver } = req.body;
     const newVehicle = await Vehicle.create({ name, plateNumber, model, status, mileage, assignedDriver });
     res.status(201).json(newVehicle);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleError(res, err);
   }
 });
 
-// Delete vehicle
-app.delete('/api/vehicles/:id', authenticate, async (req, res) => {
+// Update vehicle (Admin)
+app.put('/api/vehicles/:id', authenticate, requireAdmin, async (req, res) => {
   try {
-    await Vehicle.findByIdAndDelete(req.params.id);
+    const allowed = ['name', 'plateNumber', 'model', 'status', 'mileage', 'assignedDriver'];
+    const updates = {};
+    allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+    const vehicle = await Vehicle.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+    res.json(vehicle);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// Delete vehicle (Admin)
+app.delete('/api/vehicles/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const vehicle = await Vehicle.findByIdAndDelete(req.params.id);
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
     res.json({ message: 'Vehicle removed successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleError(res, err);
+  }
+});
+
+// --- DOCUMENTS ---
+app.get('/api/documents', authenticate, async (req, res) => {
+  try {
+    res.json(await Document.find().sort({ expiryDate: 1 }));
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.post('/api/documents', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { vehiclePlate, title, documentType, expiryDate } = req.body;
+    res.status(201).json(await Document.create({ vehiclePlate, title, documentType, expiryDate }));
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.delete('/api/documents/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const doc = await Document.findByIdAndDelete(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    res.json({ message: 'Document removed successfully' });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// --- MAINTENANCE ---
+app.get('/api/maintenance', authenticate, async (req, res) => {
+  try {
+    res.json(await Maintenance.find().sort({ date: -1 }));
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.post('/api/maintenance', authenticate, async (req, res) => {
+  try {
+    const { vehiclePlate, type, date, cost, mileageAtService, notes } = req.body;
+    const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate });
+    if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number' });
+
+    const record = await Maintenance.create({
+      vehiclePlate, type, date, cost, mileageAtService, notes, loggedBy: req.user.name
+    });
+
+    if (mileageAtService > vehicle.mileage) {
+      vehicle.mileage = mileageAtService;
+      await vehicle.save();
+    }
+    res.status(201).json(record);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.delete('/api/maintenance/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const record = await Maintenance.findByIdAndDelete(req.params.id);
+    if (!record) return res.status(404).json({ error: 'Record not found' });
+    res.json({ message: 'Record removed successfully' });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// --- STATS ---
+app.get('/api/stats', authenticate, async (req, res) => {
+  try {
+    const [vehicles, docs, spend] = await Promise.all([
+      Vehicle.find().lean(),
+      Document.find().lean(),
+      Maintenance.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, count: { $sum: 1 } } }])
+    ]);
+
+    const byStatus = { 'Active': 0, 'In Maintenance': 0, 'Out of Service': 0 };
+    vehicles.forEach(v => { byStatus[v.status] = (byStatus[v.status] || 0) + 1; });
+
+    const docStatuses = docs.map(d => Document.computeStatus(d.expiryDate));
+    const totalMileage = vehicles.reduce((sum, v) => sum + (v.mileage || 0), 0);
+
+    res.json({
+      totalVehicles: vehicles.length,
+      byStatus,
+      totalMileage,
+      avgMileage: vehicles.length ? Math.round(totalMileage / vehicles.length) : 0,
+      documents: {
+        total: docs.length,
+        expired: docStatuses.filter(s => s === 'Expired').length,
+        expiringSoon: docStatuses.filter(s => s === 'Expiring Soon').length
+      },
+      maintenance: { records: spend[0]?.count || 0, totalCost: spend[0]?.total || 0 }
+    });
+  } catch (err) {
+    handleError(res, err);
   }
 });
 
