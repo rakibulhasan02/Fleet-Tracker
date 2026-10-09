@@ -42,16 +42,18 @@ app.use(async (req, res, next) => {
 });
 
 // Middleware: Authentication Token Check
-const authenticate = (req, res, next) => {
+const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Invalid or expired token' });
+  if (!token) return res.status(401).json({ error: 'Unauthorized Access' });
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    const current = await User.findById(decoded.id).select('name role');
+    if (!current) return res.status(401).json({ error: 'Account no longer exists' });
+    req.user = { id: String(current._id), name: current.name, role: current.role };
     next();
   } catch (err) {
-    res.status(403).json({ error: 'Invalid or expired token' });
+    res.status(401).json({ error: 'Invalid or expired token' });
   }
 };
 
@@ -64,6 +66,32 @@ const requireAdmin = async (req, res, next) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// --- ROLE RULES ---
+// Admin: everything | Owner: own vehicles, read-only, sees costs
+// Driver: assigned vehicle, logs fuel | Mechanic: logs maintenance, sees own jobs, no costs
+const allowRoles = (...roles) => (req, res, next) =>
+  roles.includes(req.user?.role) ? next() : res.status(403).json({ error: 'Your role cannot access this' });
+
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const sameName = (name) => new RegExp(`^${escapeRegex(String(name || '').trim())}$`, 'i');
+
+// Which vehicles can this account see?
+const vehicleScope = (user) => {
+  if (user.role === 'Owner') return { owner: sameName(user.name) };
+  if (user.role === 'Driver') return { assignedDriver: sameName(user.name) };
+  return {}; // Admin and Mechanic
+};
+
+// Plate numbers this account may see (null = no restriction)
+const allowedPlates = async (user) => {
+  if (user.role === 'Admin') return null;
+  const list = await Vehicle.find(vehicleScope(user)).select('plateNumber').lean();
+  return list.map(v => v.plateNumber);
+};
+
+const SEES_COSTS = ['Admin', 'Owner'];
+const withoutCost = (rec) => { const o = rec.toObject ? rec.toObject() : rec; delete o.cost; return o; };
 const handleError = (res, err) => {
   if (err.code === 11000) return res.status(409).json({ error: 'A record with that unique value already exists' });
   if (err.name === 'ValidationError' || err.name === 'CastError') return res.status(400).json({ error: err.message });
@@ -119,16 +147,14 @@ app.post('/api/auth/login', async (req, res) => {
 
 // --- VEHICLE CRUD ROUTES ---
 
-// Get all vehicles
+// Get vehicles (scoped by role)
 app.get('/api/vehicles', authenticate, async (req, res) => {
   try {
-    const vehicles = await Vehicle.find().sort({ createdAt: -1 });
-    res.json(vehicles);
+    res.json(await Vehicle.find(vehicleScope(req.user)).sort({ createdAt: -1 }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleError(res, err);
   }
 });
-
 // Create vehicle (Admin)
 app.post('/api/vehicles', authenticate, requireAdmin, async (req, res) => {
   try {
@@ -166,9 +192,11 @@ app.delete('/api/vehicles/:id', authenticate, requireAdmin, async (req, res) => 
 });
 
 // --- DOCUMENTS ---
-app.get('/api/documents', authenticate, async (req, res) => {
+app.get('/api/documents', authenticate, allowRoles('Admin', 'Owner', 'Driver'), async (req, res) => {
   try {
-    res.json(await Document.find().sort({ expiryDate: 1 }));
+    const plates = await allowedPlates(req.user);
+    const filter = plates ? { vehiclePlate: { $in: plates } } : {};
+    res.json(await Document.find(filter).sort({ expiryDate: 1 }));
   } catch (err) {
     handleError(res, err);
   }
@@ -196,19 +224,29 @@ app.delete('/api/documents/:id', authenticate, requireAdmin, async (req, res) =>
 // --- MAINTENANCE ---
 app.get('/api/maintenance', authenticate, async (req, res) => {
   try {
-    res.json(await Maintenance.find().sort({ date: -1 }));
+    let filter = {};
+    if (req.user.role === 'Mechanic') {
+      filter = { mechanic: sameName(req.user.name) };
+    } else {
+      const plates = await allowedPlates(req.user);
+      if (plates) filter = { vehiclePlate: { $in: plates } };
+    }
+    const records = await Maintenance.find(filter).sort({ date: -1 });
+    res.json(SEES_COSTS.includes(req.user.role) ? records : records.map(withoutCost));
   } catch (err) {
     handleError(res, err);
   }
 });
 
-app.post('/api/maintenance', authenticate, async (req, res) => {
+app.post('/api/maintenance', authenticate, allowRoles('Admin', 'Mechanic'), async (req, res) => {
   try {
-       const { vehiclePlate, type, mechanic, date, cost, mileageAtService, notes } = req.body;
+    const { vehiclePlate, type, date, cost, mileageAtService, notes } = req.body;
+    const mechanic = req.user.role === 'Mechanic' ? req.user.name : req.body.mechanic;
+
     const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate });
     if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number' });
 
-       const record = await Maintenance.create({
+    const record = await Maintenance.create({
       vehiclePlate, type, mechanic, date, cost, mileageAtService, notes, loggedBy: req.user.name
     });
 
@@ -234,17 +272,25 @@ app.delete('/api/maintenance/:id', authenticate, requireAdmin, async (req, res) 
 
 
 // --- FUEL LOG ---
-app.get('/api/fuel', authenticate, async (req, res) => {
+app.get('/api/fuel', authenticate, allowRoles('Admin', 'Owner', 'Driver'), async (req, res) => {
   try {
-    res.json(await Fuel.find().sort({ date: -1 }));
+    const plates = await allowedPlates(req.user);
+    const filter = plates ? { vehiclePlate: { $in: plates } } : {};
+    res.json(await Fuel.find(filter).sort({ date: -1 }));
   } catch (err) {
     handleError(res, err);
   }
 });
 
-app.post('/api/fuel', authenticate, async (req, res) => {
+app.post('/api/fuel', authenticate, allowRoles('Admin', 'Driver'), async (req, res) => {
   try {
     const { vehiclePlate, date, liters, cost, odometer, station } = req.body;
+
+    const plates = await allowedPlates(req.user);
+    if (plates && !plates.includes(vehiclePlate)) {
+      return res.status(403).json({ error: 'You can only log fuel for your assigned vehicle' });
+    }
+
     const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate });
     if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number' });
 
@@ -273,7 +319,7 @@ app.delete('/api/fuel/:id', authenticate, requireAdmin, async (req, res) => {
 
 // --- DRIVERS / OWNERS / MECHANICS (generic CRUD) ---
 function crud(route, Model) {
-  app.get(`/api/${route}`, authenticate, async (req, res) => {
+   app.get(`/api/${route}`, authenticate, requireAdmin, async (req, res) => {
     try { res.json(await Model.find().sort({ name: 1 })); } catch (err) { handleError(res, err); }
   });
   app.post(`/api/${route}`, authenticate, requireAdmin, async (req, res) => {
@@ -335,40 +381,41 @@ app.delete('/api/users/:id', authenticate, requireAdmin, async (req, res) => {
   }
 });
 // --- STATS ---
-app.get('/api/stats', authenticate, async (req, res) => {
+app.get('/api/stats', authenticate, allowRoles('Admin', 'Owner'), async (req, res) => {
   try {
+    const isAdminUser = req.user.role === 'Admin';
+    const plates = await allowedPlates(req.user);
+    const byPlate = plates ? { vehiclePlate: { $in: plates } } : {};
+
     const since = new Date();
     since.setUTCDate(1);
     since.setUTCHours(0, 0, 0, 0);
     since.setUTCMonth(since.getUTCMonth() - 5);
 
     const monthly = (Model) => Model.aggregate([
-      { $match: { date: { $gte: since } } },
+      { $match: { ...byPlate, date: { $gte: since } } },
       { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date' } }, total: { $sum: '$cost' } } }
     ]);
 
     const [vehicles, docs, spend, fuelSpend, mMonthly, fMonthly, fuelLogs, driverCount, ownerCount, mechanicCount] = await Promise.all([
-      Vehicle.find().lean(),
-      Document.find().lean(),
-      Maintenance.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, count: { $sum: 1 } } }]),
-      Fuel.aggregate([{ $group: { _id: null, total: { $sum: '$cost' }, liters: { $sum: '$liters' } } }]),
+      Vehicle.find(vehicleScope(req.user)).lean(),
+      Document.find(byPlate).lean(),
+      Maintenance.aggregate([{ $match: byPlate }, { $group: { _id: null, total: { $sum: '$cost' }, count: { $sum: 1 } } }]),
+      Fuel.aggregate([{ $match: byPlate }, { $group: { _id: null, total: { $sum: '$cost' }, liters: { $sum: '$liters' } } }]),
       monthly(Maintenance),
       monthly(Fuel),
-            Fuel.find({ odometer: { $ne: null } }).lean(),
-      Driver.countDocuments(),
-      Owner.countDocuments(),
-      Mechanic.countDocuments()
+      Fuel.find({ ...byPlate, odometer: { $ne: null } }).lean(),
+      isAdminUser ? Driver.countDocuments() : 0,
+      isAdminUser ? Owner.countDocuments() : 0,
+      isAdminUser ? Mechanic.countDocuments() : 0
     ]);
 
-    // vehicles
     const byStatus = { 'Active': 0, 'In Maintenance': 0, 'Out of Service': 0 };
     vehicles.forEach(v => { byStatus[v.status] = (byStatus[v.status] || 0) + 1; });
     const totalMileage = vehicles.reduce((sum, v) => sum + (v.mileage || 0), 0);
 
-    // documents
     const docStatuses = docs.map(d => Document.computeStatus(d.expiryDate));
 
-    // last 6 months of spend
     const mMap = Object.fromEntries(mMonthly.map(x => [x._id, x.total]));
     const fMap = Object.fromEntries(fMonthly.map(x => [x._id, x.total]));
     const months = [];
@@ -384,11 +431,10 @@ app.get('/api/stats', authenticate, async (req, res) => {
       });
     }
 
-    // fleet fuel efficiency (km per liter) from odometer readings
-    const byPlate = {};
-    fuelLogs.forEach(f => (byPlate[f.vehiclePlate] = byPlate[f.vehiclePlate] || []).push(f));
+    const byVehicle = {};
+    fuelLogs.forEach(f => (byVehicle[f.vehiclePlate] = byVehicle[f.vehiclePlate] || []).push(f));
     let km = 0, litres = 0;
-    Object.values(byPlate).forEach(list => {
+    Object.values(byVehicle).forEach(list => {
       if (list.length < 2) return;
       list.sort((a, b) => a.odometer - b.odometer);
       km += list[list.length - 1].odometer - list[0].odometer;
@@ -412,7 +458,7 @@ app.get('/api/stats', authenticate, async (req, res) => {
         kmPerL: litres > 0 ? km / litres : 0
       },
       monthly: months,
-            people: { drivers: driverCount, owners: ownerCount, mechanics: mechanicCount }
+      people: isAdminUser ? { drivers: driverCount, owners: ownerCount, mechanics: mechanicCount } : undefined
     });
   } catch (err) {
     handleError(res, err);

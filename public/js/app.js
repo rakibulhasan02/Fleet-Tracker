@@ -106,6 +106,38 @@ function initDashboard() {
 
   $('userInfo').innerText = `${user.name} (${user.role})`;
   if (!isAdmin) document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+    // ---------- role permissions (what each role may see and do) ----------
+  const role = user.role;
+  const CAN = {
+    stats: ['Admin', 'Owner'],
+    costs: ['Admin', 'Owner'],
+    documents: ['Admin', 'Owner', 'Driver'],
+    maintenance: ['Admin', 'Owner', 'Mechanic', 'Driver'],
+    fuel: ['Admin', 'Owner', 'Driver'],
+    logMaintenance: ['Admin', 'Mechanic'],
+    logFuel: ['Admin', 'Driver'],
+    directory: ['Admin'],
+    users: ['Admin']
+  };
+  const can = (key) => CAN[key].includes(role);
+  const hideEl = (el) => { if (el) el.style.display = 'none'; };
+
+  const TAB_PERMISSION = {
+    documents: 'documents', maintenance: 'maintenance', fuel: 'fuel',
+    drivers: 'directory', owners: 'directory', mechanics: 'directory', users: 'users'
+  };
+  document.querySelectorAll('.tab').forEach(t => {
+    const perm = TAB_PERMISSION[t.dataset.tab];
+    if (perm && !can(perm)) hideEl(t);
+  });
+  if (!can('stats')) {
+    hideEl($('statsGrid'));
+    hideEl($('docAlert'));
+    hideEl(document.querySelector('.chart-grid'));
+  }
+  if (!can('logMaintenance')) hideEl($('maintenanceForm').closest('.card'));
+  if (!can('logFuel')) hideEl($('fuelForm').closest('.card'));
+  if (role === 'Mechanic') hideEl($('mMechanic'));
     $('logoutBtn').onclick = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = 'index.html'; };
 
   // helpers
@@ -175,6 +207,7 @@ function initDashboard() {
   }
 
   async function loadStats() {
+        if (!can('stats')) return;
     const s = await api('/stats');
     lastStats = s;
     const attention = s.documents.expired + s.documents.expiringSoon;
@@ -187,9 +220,11 @@ function initDashboard() {
       ['', '⛽', s.fuel.kmPerL ? `${s.fuel.kmPerL.toFixed(1)} km/L` : '—', 'Fleet fuel efficiency'],
       ['', '💰', money(s.maintenance.totalCost + s.fuel.totalCost), 'Total running cost'],
       [attention ? 'red' : 'green', '📄', attention, 'Documents needing attention'],
-            ['', '🧑‍✈️', s.people.drivers, 'Drivers'],
-      ['', '🏢', s.people.owners, 'Owners'],
-      ['', '🛠️', s.people.mechanics, 'Mechanics']
+            ...(isAdmin ? [
+        ['', '🧑‍✈️', s.people.drivers, 'Drivers'],
+        ['', '🏢', s.people.owners, 'Owners'],
+        ['', '🛠️', s.people.mechanics, 'Mechanics']
+      ] : [])
     ].map(([c, icon, v, l]) => `
       <div class="stat ${c}">
         <div class="icon">${icon}</div>
@@ -377,14 +412,14 @@ function initDashboard() {
         maintenanceRecords = records;
     renderPeople('mechanics');
     const total = records.reduce((sum, r) => sum + (r.cost || 0), 0);
-    $('maintenanceTotal').textContent = records.length ? `Total spend: ${money(total)}` : '';
+        $('maintenanceTotal').textContent = records.length && can('costs') ? `Total spend: ${money(total)}` : '';
     $('maintenanceTableBody').innerHTML = records.length ? records.map(r => `
       <tr>
         <td>${fmtDate(r.date)}</td>
         <td>${esc(r.vehiclePlate)}</td>
         <td>${esc(r.type)}</td>
                 <td>${esc(r.mechanic) || '-'}</td>
-        <td>${money(r.cost)}</td>
+                <td>${r.cost == null ? '-' : money(r.cost)}</td>
         <td>${r.mileageAtService != null ? Number(r.mileageAtService).toLocaleString() + ' km' : '-'}</td>
         <td>${esc(r.notes)}</td>
         <td>${esc(r.loggedBy)}</td>
@@ -686,8 +721,11 @@ function initDashboard() {
     });
   };
   // initial load
-        run(() => Promise.all([
-    loadPeople('drivers'), loadPeople('owners'), loadPeople('mechanics'),
-    loadVehicles(), loadDocuments(), loadMaintenance(), loadFuel(), loadStats(), loadUsers()
-  ]));
+  const jobs = [loadVehicles()];
+  if (can('documents')) jobs.push(loadDocuments());
+  if (can('maintenance')) jobs.push(loadMaintenance());
+  if (can('fuel')) jobs.push(loadFuel());
+  if (can('stats')) jobs.push(loadStats());
+  if (isAdmin) jobs.push(loadPeople('drivers'), loadPeople('owners'), loadPeople('mechanics'), loadUsers());
+  run(() => Promise.all(jobs));
 }
