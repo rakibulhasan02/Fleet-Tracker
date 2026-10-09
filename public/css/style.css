@@ -130,3 +130,4 @@ table tbody tr { transition: background .12s; } table tbody tr:hover { backgroun
 .brand-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin-top: 0.9rem; }
 .brand-chips span { background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.3); padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
 .auth-footer { text-align: center; color: rgba(255, 255, 255, 0.8); font-size: 0.8rem; padding-bottom: 1.5rem; }
+table select { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); }

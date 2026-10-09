@@ -55,12 +55,15 @@ const authenticate = (req, res, next) => {
   }
 };
 
-
-const requireAdmin = (req, res, next) => {
-  if (req.user?.role !== 'Admin') return res.status(403).json({ error: 'Admin access required' });
-  next();
+const requireAdmin = async (req, res, next) => {
+  try {
+    const current = await User.findById(req.user.id).select('role');
+    if (!current || current.role !== 'Admin') return res.status(403).json({ error: 'Admin access required' });
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
-
 const handleError = (res, err) => {
   if (err.code === 11000) return res.status(409).json({ error: 'A record with that unique value already exists' });
   if (err.name === 'ValidationError' || err.name === 'CastError') return res.status(400).json({ error: err.message });
@@ -69,7 +72,7 @@ const handleError = (res, err) => {
 
 // --- AUTH ROUTES ---
 
-// Register
+// Register (public sign-up can never create an Admin, except the very first account)
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -77,11 +80,15 @@ app.post('/api/auth/register', async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ error: 'User already exists' });
 
+    const isFirstUser = (await User.countDocuments()) === 0;
+    const publicRoles = ['Driver', 'Owner', 'Mechanic'];
+    const finalRole = isFirstUser ? 'Admin' : (publicRoles.includes(role) ? role : 'Driver');
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hashedPassword, role });
-    res.status(201).json({ message: 'User registered successfully' });
+    await User.create({ name, email, password: hashedPassword, role: finalRole });
+    res.status(201).json({ message: isFirstUser ? 'First account created as Admin' : 'User registered successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleError(res, err);
   }
 });
 
@@ -283,6 +290,42 @@ crud('drivers', Driver);
 crud('owners', Owner);
 crud('mechanics', Mechanic);
 
+// --- USER MANAGEMENT (Admin only) ---
+const ALL_ROLES = ['Admin', 'Driver', 'Owner', 'Mechanic'];
+
+app.get('/api/users', authenticate, requireAdmin, async (req, res) => {
+  try {
+    res.json(await User.find().select('-password').sort({ createdAt: 1 }));
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.put('/api/users/:id/role', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    if (req.params.id === req.user.id && role !== 'Admin') {
+      return res.status(400).json({ error: 'You cannot remove your own Admin role' });
+    }
+    const target = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-password');
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    res.json(target);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+app.delete('/api/users/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    if (req.params.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
+    const target = await User.findByIdAndDelete(req.params.id);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'User removed successfully' });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
 // --- STATS ---
 app.get('/api/stats', authenticate, async (req, res) => {
   try {

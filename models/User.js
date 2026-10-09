@@ -4,7 +4,7 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-    role: { type: String, enum: ['Admin', 'Driver', 'Owner', 'Mechanic'], default: 'Driver' },
+      role: { type: String, enum: ['Admin', 'Driver', 'Owner', 'Mechanic'], default: 'Driver' },
   createdAt: { type: Date, default: Date.now }
 });
 

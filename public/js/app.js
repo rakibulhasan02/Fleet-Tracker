@@ -637,9 +637,50 @@ function initDashboard() {
 
     renderPeople(type);
   });
+    // ---------- user accounts (Admin only) ----------
+  const ROLES = ['Admin', 'Driver', 'Owner', 'Mechanic'];
+
+  async function loadUsers() {
+    if (!isAdmin) return;
+    const users = await api('/users');
+    $('userTableBody').innerHTML = users.map(u => {
+      const me = u.email === user.email;
+      return `
+      <tr>
+        <td>${esc(u.name)}</td>
+        <td>${esc(u.email)}</td>
+        <td>
+          <select data-role-for="${esc(u._id)}" ${me ? 'disabled' : ''}>
+            ${ROLES.map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
+          </select>
+        </td>
+        <td>${fmtDate(u.createdAt)}</td>
+        <td>${me ? '<em>You</em>' : `<button class="btn btn-danger" data-id="${esc(u._id)}">Delete</button>`}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  $('userTableBody').onchange = (e) => {
+    const sel = e.target.closest('select[data-role-for]');
+    if (!sel) return;
+    run(async () => {
+      await send('PUT', `/users/${sel.dataset.roleFor}/role`, { role: sel.value });
+      await loadUsers();
+    });
+  };
+
+  $('userTableBody').onclick = (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    run(async () => {
+      if (!confirm('Delete this user account?')) return;
+      await send('DELETE', `/users/${btn.dataset.id}`);
+      await loadUsers();
+    });
+  };
   // initial load
-      run(() => Promise.all([
+        run(() => Promise.all([
     loadPeople('drivers'), loadPeople('owners'), loadPeople('mechanics'),
-    loadVehicles(), loadDocuments(), loadMaintenance(), loadFuel(), loadStats()
+    loadVehicles(), loadDocuments(), loadMaintenance(), loadFuel(), loadStats(), loadUsers()
   ]));
 }

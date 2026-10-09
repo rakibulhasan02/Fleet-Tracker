@@ -33,6 +33,7 @@
                   <button class="tab" data-tab="drivers">Drivers</button>
       <button class="tab" data-tab="owners">Owners</button>
       <button class="tab" data-tab="mechanics">Mechanics</button>
+            <button class="tab admin-only" data-tab="users">Users</button>
     </div>
 
     <section id="tab-vehicles">
@@ -178,6 +179,20 @@
         <section id="tab-drivers" class="hidden"></section>
     <section id="tab-owners" class="hidden"></section>
     <section id="tab-mechanics" class="hidden"></section>
+        <section id="tab-users" class="hidden admin-only">
+      <div class="card">
+        <h3>👥 User Accounts</h3>
+        <p style="color: var(--muted); margin: 0.25rem 0 0.5rem;">Only an Admin can change roles. New sign-ups start as Driver, Owner or Mechanic.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="userTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 
     <div id="editModal" class="modal hidden">
