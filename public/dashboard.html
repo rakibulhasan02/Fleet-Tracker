@@ -30,6 +30,8 @@
       <button class="tab" data-tab="documents">Documents</button>
       <button class="tab" data-tab="maintenance">Maintenance</button>
             <button class="tab" data-tab="fuel">Fuel</button>
+                  <button class="tab" data-tab="tracking">Tracking</button>
+      <button class="tab" data-tab="reports">Reports</button>
                   <button class="tab" data-tab="drivers">Drivers</button>
       <button class="tab" data-tab="owners">Owners</button>
       <button class="tab" data-tab="mechanics">Mechanics</button>
@@ -37,7 +39,7 @@
     </div>
 
     <section id="tab-vehicles">
-      <div class="card admin-only">
+            <div class="card manager-only">
         <h3>Add New Vehicle</h3>
         <form id="vehicleForm" class="form-grid">
           <input type="text" id="vName" placeholder="Vehicle Name" required>
@@ -74,7 +76,7 @@
             <thead>
               <tr>
                 <th>Name</th><th>Plate Number</th><th>Model</th><th>Mileage</th>
-                <th>Status</th><th>Driver</th><th>Owner</th><th class="admin-only">Actions</th>
+                <th>Status</th><th>Driver</th><th>Owner</th><th class="manager-only">Actions</th>
               </tr>
             </thead>
             <tbody id="vehicleTableBody"></tbody>
@@ -141,7 +143,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Date</th><th>Vehicle</th><th>Service</th><th>Cost</th><th>Mileage</th><th>Notes</th><th>Logged By</th><th class="admin-only">Actions</th></tr>
+                            <tr><th>Date</th><th>Vehicle</th><th>Service</th><th>Mechanic</th><th>Status</th><th>Cost</th><th>Mileage</th><th>Notes</th><th>Logged By</th><th id="maintActionsTh">Actions</th></tr>
             </thead>
             <tbody id="maintenanceTableBody"></tbody>
           </table>
@@ -179,6 +181,56 @@
         <section id="tab-drivers" class="hidden"></section>
     <section id="tab-owners" class="hidden"></section>
     <section id="tab-mechanics" class="hidden"></section>
+        <section id="tab-tracking" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>📍 Vehicle Tracking</h3>
+          <small style="color: var(--muted);">Last known location reported by each driver</small>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Vehicle</th><th>Plate</th><th>Driver</th><th>Status</th><th>Last location</th><th>Updated</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="trackingTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card hidden" id="mapCard">
+        <h3 id="mapTitle">Map</h3>
+        <iframe id="mapFrame" style="width: 100%; height: 380px; border: 0; border-radius: 12px; margin-top: 0.75rem;" loading="lazy"></iframe>
+      </div>
+    </section>
+
+    <section id="tab-reports" class="hidden">
+      <div class="card">
+        <h3>📊 Generate Report</h3>
+        <form id="reportForm" class="form-grid">
+          <select id="rPlate"></select>
+          <input type="date" id="rFrom" title="From date">
+          <input type="date" id="rTo" title="To date">
+          <button type="submit" class="btn">Generate Report</button>
+        </form>
+      </div>
+      <div class="card hidden" id="reportCard">
+        <div class="toolbar">
+          <h3>Fleet Report</h3>
+          <div class="toolbar-controls no-print">
+            <button type="button" id="reportCsv" class="btn btn-secondary">Download CSV</button>
+            <button type="button" id="reportPrint" class="btn">Print / Save PDF</button>
+          </div>
+        </div>
+        <p id="reportMeta" style="color: var(--muted); margin: 0.5rem 0;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Vehicle</th><th>Plate</th><th>Driver</th><th>Status</th><th>Mileage</th><th>Jobs</th><th>Maintenance</th><th>Fuel (L)</th><th>Fuel cost</th><th>Total cost</th></tr>
+            </thead>
+            <tbody id="reportBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
         <section id="tab-users" class="hidden admin-only">
       <div class="card">
         <h3>👥 User Accounts</h3>

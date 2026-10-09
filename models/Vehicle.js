@@ -12,6 +12,12 @@ const VehicleSchema = new mongoose.Schema({
   mileage: { type: Number, default: 0 },
   assignedDriver: { type: String, default: 'Unassigned' },
     owner: { type: String, default: 'Unassigned' },
+      location: {
+    lat: Number,
+    lng: Number,
+    updatedAt: Date,
+    updatedBy: String
+  },
   createdAt: { type: Date, default: Date.now }
 });
 
