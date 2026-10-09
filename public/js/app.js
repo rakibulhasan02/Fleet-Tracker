@@ -107,22 +107,15 @@ function initDashboard() {
   $('userInfo').innerText = `${user.name} (${user.role})`;
   if (!isAdmin) document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
     // ---------- role permissions (what each role may see and do) ----------
-    const role = user.role;
+  const role = user.role;
   const CAN = {
     stats: ['Admin', 'Owner'],
     costs: ['Admin', 'Owner'],
-    editVehicle: ['Admin', 'Owner'],
     documents: ['Admin', 'Owner', 'Driver'],
     maintenance: ['Admin', 'Owner', 'Mechanic', 'Driver'],
-    logMaintenance: ['Admin', 'Owner', 'Mechanic'],
-    updateJobs: ['Admin', 'Mechanic'],
     fuel: ['Admin', 'Owner', 'Driver'],
+    logMaintenance: ['Admin', 'Mechanic'],
     logFuel: ['Admin', 'Driver'],
-    tracking: ['Admin', 'Owner', 'Driver'],
-    updateLocation: ['Admin', 'Driver'],
-    reports: ['Admin', 'Owner'],
-    viewDrivers: ['Admin', 'Owner'],
-    viewMechanics: ['Admin', 'Owner'],
     directory: ['Admin'],
     users: ['Admin']
   };
@@ -131,9 +124,7 @@ function initDashboard() {
 
   const TAB_PERMISSION = {
     documents: 'documents', maintenance: 'maintenance', fuel: 'fuel',
-    tracking: 'tracking', reports: 'reports',
-    drivers: 'viewDrivers', mechanics: 'viewMechanics',
-    owners: 'directory', users: 'users'
+    drivers: 'directory', owners: 'directory', mechanics: 'directory', users: 'users'
   };
   document.querySelectorAll('.tab').forEach(t => {
     const perm = TAB_PERMISSION[t.dataset.tab];
@@ -144,20 +135,9 @@ function initDashboard() {
     hideEl($('docAlert'));
     hideEl(document.querySelector('.chart-grid'));
   }
-  if (!can('editVehicle')) document.querySelectorAll('.manager-only').forEach(hideEl);
-  if (!can('updateJobs')) hideEl($('maintActionsTh'));
   if (!can('logMaintenance')) hideEl($('maintenanceForm').closest('.card'));
   if (!can('logFuel')) hideEl($('fuelForm').closest('.card'));
   if (role === 'Mechanic') hideEl($('mMechanic'));
-  if (role === 'Owner') {
-    hideEl($('vOwner'));
-    hideEl($('eOwner'));
-    hideEl($('mCost'));
-    hideEl($('mMileage'));
-    $('mMechanic').required = true;
-    $('maintenanceForm').closest('.card').querySelector('h3').textContent = 'Assign Maintenance Job';
-    $('maintenanceForm').querySelector('button[type="submit"]').textContent = 'Assign Job to Mechanic';
-  };
     $('logoutBtn').onclick = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = 'index.html'; };
 
   // helpers
@@ -285,9 +265,9 @@ function initDashboard() {
         <td>${badge(v.status, vehicleColor[v.status] || 'green')}</td>
         <td>${esc(v.assignedDriver)}</td>
         <td>${esc(v.owner)}</td>
-                ${can('editVehicle') ? `<td>
+        ${isAdmin ? `<td>
           <button class="btn btn-edit" data-action="edit" data-id="${esc(v._id)}">Edit</button>
-          ${isAdmin ? `<button class="btn btn-danger" data-action="delete" data-id="${esc(v._id)}">Delete</button>` : ''}
+          <button class="btn btn-danger" data-action="delete" data-id="${esc(v._id)}">Delete</button>
         </td>` : ''}
       </tr>`).join('') : `<tr><td colspan="8" class="empty">No vehicles found.</td></tr>`;
   }
@@ -299,8 +279,6 @@ function initDashboard() {
     $('dPlate').innerHTML = options;
     $('mPlate').innerHTML = options;
         $('fPlate').innerHTML = options;
-            $('rPlate').innerHTML = '<option value="">All vehicles</option>' +
-      vehicles.map(v => `<option value="${esc(v.plateNumber)}">${esc(v.plateNumber)} - ${esc(v.name)}</option>`).join('');
   }
 
   async function loadVehicles() {
@@ -309,7 +287,6 @@ function initDashboard() {
     fillPlateSelects();
         renderPeople('drivers');
     renderPeople('owners');
-        renderTracking();
   }
 
   $('vehicleSearch').oninput = renderVehicles;
@@ -430,37 +407,24 @@ function initDashboard() {
   };
 
   // maintenance
-    const jobColor = { 'Assigned': 'amber', 'In Progress': 'amber', 'Completed': 'green' };
-
   async function loadMaintenance() {
     const records = await api('/maintenance');
-    maintenanceRecords = records;
+        maintenanceRecords = records;
     renderPeople('mechanics');
-
     const total = records.reduce((sum, r) => sum + (r.cost || 0), 0);
-    $('maintenanceTotal').textContent = records.length && can('costs') ? `Total spend: ${money(total)}` : '';
-
-    $('maintenanceTableBody').innerHTML = records.length ? records.map(r => {
-      const status = r.status || 'Completed';
-      const buttons = can('updateJobs') ? `<td>
-        ${status === 'Assigned' ? `<button class="btn btn-edit" data-action="start" data-id="${esc(r._id)}">Start</button>` : ''}
-        ${status !== 'Completed' ? `<button class="btn btn-edit" data-action="complete" data-id="${esc(r._id)}">Complete</button>` : ''}
-        ${isAdmin ? `<button class="btn btn-danger" data-action="delete" data-id="${esc(r._id)}">Delete</button>` : ''}
-      </td>` : '';
-      return `
+        $('maintenanceTotal').textContent = records.length && can('costs') ? `Total spend: ${money(total)}` : '';
+    $('maintenanceTableBody').innerHTML = records.length ? records.map(r => `
       <tr>
         <td>${fmtDate(r.date)}</td>
-        <td><span class="plate">${esc(r.vehiclePlate)}</span></td>
+        <td>${esc(r.vehiclePlate)}</td>
         <td>${esc(r.type)}</td>
-        <td>${esc(r.mechanic) || '-'}</td>
-        <td>${badge(status, jobColor[status] || 'green')}</td>
-        <td>${r.cost == null ? '-' : money(r.cost)}</td>
+                <td>${esc(r.mechanic) || '-'}</td>
+                <td>${r.cost == null ? '-' : money(r.cost)}</td>
         <td>${r.mileageAtService != null ? Number(r.mileageAtService).toLocaleString() + ' km' : '-'}</td>
         <td>${esc(r.notes)}</td>
         <td>${esc(r.loggedBy)}</td>
-        ${buttons}
-      </tr>`;
-    }).join('') : `<tr><td colspan="10" class="empty">No maintenance logged yet.</td></tr>`;
+        ${isAdmin ? `<td><button class="btn btn-danger" data-id="${esc(r._id)}">Delete</button></td>` : ''}
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">No maintenance logged yet.</td></tr>`;
   }
 
   $('mDate').value = new Date().toISOString().slice(0, 10);
@@ -485,32 +449,16 @@ function initDashboard() {
   $('maintenanceTableBody').onclick = (e) => {
     const btn = e.target.closest('button[data-id]');
     if (!btn) return;
-    const id = btn.dataset.id;
     run(async () => {
-      if (btn.dataset.action === 'start') {
-        await send('PUT', `/maintenance/${id}`, { status: 'In Progress' });
-      } else if (btn.dataset.action === 'complete') {
-        const cost = prompt('Final cost of this job?', '0');
-        if (cost === null) return;
-        const mileage = prompt('Vehicle mileage at service (km)? Leave empty to skip.', '');
-        if (mileage === null) return;
-        await send('PUT', `/maintenance/${id}`, {
-          status: 'Completed',
-          cost: Number(cost || 0),
-          ...(mileage ? { mileageAtService: Number(mileage) } : {})
-        });
-      } else {
-        if (!confirm('Remove this maintenance record?')) return;
-        await send('DELETE', `/maintenance/${id}`);
-      }
-      await Promise.all([loadMaintenance(), loadVehicles(), loadStats()]);
+      if (!confirm('Remove this maintenance record?')) return;
+      await send('DELETE', `/maintenance/${btn.dataset.id}`);
+      await Promise.all([loadMaintenance(), loadStats()]);
     });
   };
 
     // fuel
   async function loadFuel() {
     const logs = await api('/fuel');
-        fuelRecords = logs;
     const liters = logs.reduce((sum, l) => sum + (l.liters || 0), 0);
     const cost = logs.reduce((sum, l) => sum + (l.cost || 0), 0);
     $('fuelTotal').textContent = logs.length ? `${liters.toFixed(1)} L · ${money(cost)}` : '';
@@ -772,130 +720,12 @@ function initDashboard() {
       await loadUsers();
     });
   };
-    // ---------- vehicle tracking ----------
-  function renderTracking() {
-    $('trackingTableBody').innerHTML = vehicles.length ? vehicles.map(v => {
-      const loc = v.location && v.location.lat != null ? v.location : null;
-      const time = loc ? `${fmtDate(loc.updatedAt)} ${new Date(loc.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '-';
-      return `
-      <tr>
-        <td>${esc(v.name)}</td>
-        <td><span class="plate">${esc(v.plateNumber)}</span></td>
-        <td>${esc(v.assignedDriver)}</td>
-        <td>${badge(v.status, vehicleColor[v.status] || 'green')}</td>
-        <td>${loc ? `${Number(loc.lat).toFixed(5)}, ${Number(loc.lng).toFixed(5)}` : '<em>No location yet</em>'}</td>
-        <td>${time}</td>
-        <td>
-          ${loc ? `<button class="btn btn-edit" data-action="map" data-id="${esc(v._id)}">Show map</button>` : ''}
-          ${can('updateLocation') ? `<button class="btn" style="width:auto;padding:0.35rem 0.8rem;font-size:0.85rem;" data-action="locate" data-id="${esc(v._id)}">Update location</button>` : ''}
-        </td>
-      </tr>`;
-    }).join('') : `<tr><td colspan="7" class="empty">No vehicles to track.</td></tr>`;
-  }
-
-  function showMap(v) {
-    const { lat, lng } = v.location;
-    const d = 0.01;
-    $('mapFrame').src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - d},${lat - d},${lng + d},${lat + d}&layer=mapnik&marker=${lat},${lng}`;
-    $('mapTitle').textContent = `${v.name} (${v.plateNumber})`;
-    $('mapCard').classList.remove('hidden');
-    $('mapCard').scrollIntoView({ behavior: 'smooth' });
-  }
-
-  $('trackingTableBody').onclick = (e) => {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    const v = vehicles.find(x => x._id === btn.dataset.id);
-    if (!v) return;
-    if (btn.dataset.action === 'map') showMap(v);
-    if (btn.dataset.action === 'locate') {
-      if (!navigator.geolocation) return toast('Location is not supported on this device', 'error');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => run(async () => {
-          await send('POST', `/vehicles/${v._id}/location`, { lat: pos.coords.latitude, lng: pos.coords.longitude });
-          await loadVehicles();
-        }),
-        () => toast('Could not get your location. Please allow location access.', 'error'),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    }
-  };
-
-  // ---------- reports ----------
-  let fuelRecords = [];
-  let lastReport = [];
-
-  $('reportForm').onsubmit = (e) => {
-    e.preventDefault();
-    const plate = $('rPlate').value;
-    const from = $('rFrom').value ? new Date($('rFrom').value) : null;
-    const to = $('rTo').value ? new Date(`${$('rTo').value}T23:59:59`) : null;
-    const inRange = (d) => (!from || new Date(d) >= from) && (!to || new Date(d) <= to);
-
-    lastReport = vehicles.filter(v => !plate || v.plateNumber === plate).map(v => {
-      const jobs = maintenanceRecords.filter(r => r.vehiclePlate === v.plateNumber && inRange(r.date));
-      const fuel = fuelRecords.filter(r => r.vehiclePlate === v.plateNumber && inRange(r.date));
-      const maintCost = jobs.reduce((s, r) => s + (r.cost || 0), 0);
-      const fuelCost = fuel.reduce((s, r) => s + (r.cost || 0), 0);
-      return {
-        name: v.name, plate: v.plateNumber, driver: v.assignedDriver, status: v.status, mileage: v.mileage,
-        jobs: jobs.length, maintCost,
-        liters: fuel.reduce((s, r) => s + (r.liters || 0), 0), fuelCost,
-        total: maintCost + fuelCost
-      };
-    });
-
-    const sum = (k) => lastReport.reduce((s, r) => s + r[k], 0);
-    $('reportBody').innerHTML = lastReport.length
-      ? lastReport.map(r => `
-        <tr>
-          <td>${esc(r.name)}</td>
-          <td><span class="plate">${esc(r.plate)}</span></td>
-          <td>${esc(r.driver)}</td>
-          <td>${badge(r.status, vehicleColor[r.status] || 'green')}</td>
-          <td>${Number(r.mileage).toLocaleString()} km</td>
-          <td>${r.jobs}</td>
-          <td>${money(r.maintCost)}</td>
-          <td>${r.liters.toFixed(1)}</td>
-          <td>${money(r.fuelCost)}</td>
-          <td><strong>${money(r.total)}</strong></td>
-        </tr>`).join('') + `
-        <tr style="font-weight: 700;">
-          <td colspan="5">Total (${lastReport.length} vehicles)</td>
-          <td>${sum('jobs')}</td>
-          <td>${money(sum('maintCost'))}</td>
-          <td>${sum('liters').toFixed(1)}</td>
-          <td>${money(sum('fuelCost'))}</td>
-          <td>${money(sum('total'))}</td>
-        </tr>`
-      : `<tr><td colspan="10" class="empty">No vehicles found.</td></tr>`;
-
-    $('reportMeta').textContent = `Prepared for ${user.name} · ${plate || 'All vehicles'} · ${$('rFrom').value || 'start'} to ${$('rTo').value || 'today'} · Generated ${new Date().toLocaleString()}`;
-    $('reportCard').classList.remove('hidden');
-  };
-
-  $('reportCsv').onclick = () => {
-    if (!lastReport.length) return;
-    const cell = (x) => `"${String(x ?? '').replace(/"/g, '""')}"`;
-    const csv = [['Vehicle', 'Plate', 'Driver', 'Status', 'Mileage (km)', 'Jobs', 'Maintenance cost', 'Fuel (L)', 'Fuel cost', 'Total cost']]
-      .concat(lastReport.map(r => [r.name, r.plate, r.driver, r.status, r.mileage, r.jobs, r.maintCost.toFixed(2), r.liters.toFixed(1), r.fuelCost.toFixed(2), r.total.toFixed(2)]))
-      .map(r => r.map(cell).join(',')).join('\r\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = `fleet-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  $('reportPrint').onclick = () => window.print();
   // initial load
-    const jobs = [loadVehicles()];
+  const jobs = [loadVehicles()];
   if (can('documents')) jobs.push(loadDocuments());
   if (can('maintenance')) jobs.push(loadMaintenance());
   if (can('fuel')) jobs.push(loadFuel());
   if (can('stats')) jobs.push(loadStats());
-  if (can('viewDrivers')) jobs.push(loadPeople('drivers'));
-  if (can('viewMechanics')) jobs.push(loadPeople('mechanics'));
-  if (isAdmin) jobs.push(loadPeople('owners'), loadUsers());
+  if (isAdmin) jobs.push(loadPeople('drivers'), loadPeople('owners'), loadPeople('mechanics'), loadUsers());
   run(() => Promise.all(jobs));
 }

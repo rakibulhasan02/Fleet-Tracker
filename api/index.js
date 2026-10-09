@@ -155,11 +155,10 @@ app.get('/api/vehicles', authenticate, async (req, res) => {
     handleError(res, err);
   }
 });
-// Create vehicle (Admin, Owner)
-app.post('/api/vehicles', authenticate, allowRoles('Admin', 'Owner'), async (req, res) => {
+// Create vehicle (Admin)
+app.post('/api/vehicles', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { name, plateNumber, model, status, mileage, assignedDriver } = req.body;
-    const owner = req.user.role === 'Owner' ? req.user.name : req.body.owner;
+        const { name, plateNumber, model, status, mileage, assignedDriver, owner } = req.body;
     const newVehicle = await Vehicle.create({ name, plateNumber, model, status, mileage, assignedDriver, owner });
     res.status(201).json(newVehicle);
   } catch (err) {
@@ -167,39 +166,13 @@ app.post('/api/vehicles', authenticate, allowRoles('Admin', 'Owner'), async (req
   }
 });
 
-// Update vehicle (Admin: any, Owner: own vehicles only)
-app.put('/api/vehicles/:id', authenticate, allowRoles('Admin', 'Owner'), async (req, res) => {
+// Update vehicle (Admin)
+app.put('/api/vehicles/:id', authenticate, requireAdmin, async (req, res) => {
   try {
-    const allowed = ['name', 'plateNumber', 'model', 'status', 'mileage', 'assignedDriver'];
-    if (req.user.role === 'Admin') allowed.push('owner');
+        const allowed = ['name', 'plateNumber', 'model', 'status', 'mileage', 'assignedDriver', 'owner'];
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
-
-    const vehicle = await Vehicle.findOneAndUpdate(
-      { _id: req.params.id, ...vehicleScope(req.user) },
-      updates,
-      { new: true, runValidators: true }
-    );
-    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
-    res.json(vehicle);
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// Update vehicle location (Admin, or the Driver assigned to it)
-app.post('/api/vehicles/:id/location', authenticate, allowRoles('Admin', 'Driver'), async (req, res) => {
-  try {
-    const lat = Number(req.body.lat);
-    const lng = Number(req.body.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-      return res.status(400).json({ error: 'Invalid coordinates' });
-    }
-    const vehicle = await Vehicle.findOneAndUpdate(
-      { _id: req.params.id, ...vehicleScope(req.user) },
-      { location: { lat, lng, updatedAt: new Date(), updatedBy: req.user.name } },
-      { new: true }
-    );
+    const vehicle = await Vehicle.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
     res.json(vehicle);
   } catch (err) {
@@ -265,27 +238,19 @@ app.get('/api/maintenance', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/maintenance', authenticate, allowRoles('Admin', 'Owner', 'Mechanic'), async (req, res) => {
+app.post('/api/maintenance', authenticate, allowRoles('Admin', 'Mechanic'), async (req, res) => {
   try {
     const { vehiclePlate, type, date, cost, mileageAtService, notes } = req.body;
-    const role = req.user.role;
+    const mechanic = req.user.role === 'Mechanic' ? req.user.name : req.body.mechanic;
 
-    const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate, ...vehicleScope(req.user) });
-    if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number (or it is not yours)' });
-
-    let mechanic = req.body.mechanic;
-    let status = 'Completed';
-    if (role === 'Mechanic') mechanic = req.user.name;
-    if (role === 'Owner') {
-      if (!mechanic) return res.status(400).json({ error: 'Please choose a mechanic for this job' });
-      status = 'Assigned';
-    }
+    const vehicle = await Vehicle.findOne({ plateNumber: vehiclePlate });
+    if (!vehicle) return res.status(400).json({ error: 'No vehicle with that plate number' });
 
     const record = await Maintenance.create({
-      vehiclePlate, type, mechanic, status, date, cost, mileageAtService, notes, loggedBy: req.user.name
+      vehiclePlate, type, mechanic, date, cost, mileageAtService, notes, loggedBy: req.user.name
     });
 
-    if (status === 'Completed' && mileageAtService > vehicle.mileage) {
+    if (mileageAtService > vehicle.mileage) {
       vehicle.mileage = mileageAtService;
       await vehicle.save();
     }
@@ -295,34 +260,6 @@ app.post('/api/maintenance', authenticate, allowRoles('Admin', 'Owner', 'Mechani
   }
 });
 
-// Mechanic updates their own job (start / complete); Admin can update any job
-app.put('/api/maintenance/:id', authenticate, allowRoles('Admin', 'Mechanic'), async (req, res) => {
-  try {
-    const job = await Maintenance.findById(req.params.id);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-    if (req.user.role === 'Mechanic' && !sameName(req.user.name).test(job.mechanic || '')) {
-      return res.status(403).json({ error: 'This job is not assigned to you' });
-    }
-
-    const { status, cost, mileageAtService, notes } = req.body;
-    if (status) job.status = status;
-    if (cost !== undefined) job.cost = cost;
-    if (mileageAtService !== undefined) job.mileageAtService = mileageAtService;
-    if (notes !== undefined) job.notes = notes;
-    await job.save();
-
-    if (job.status === 'Completed' && job.mileageAtService) {
-      const vehicle = await Vehicle.findOne({ plateNumber: job.vehiclePlate });
-      if (vehicle && job.mileageAtService > vehicle.mileage) {
-        vehicle.mileage = job.mileageAtService;
-        await vehicle.save();
-      }
-    }
-    res.json(SEES_COSTS.includes(req.user.role) ? job : withoutCost(job));
-  } catch (err) {
-    handleError(res, err);
-  }
-});
 app.delete('/api/maintenance/:id', authenticate, requireAdmin, async (req, res) => {
   try {
     const record = await Maintenance.findByIdAndDelete(req.params.id);
@@ -381,8 +318,8 @@ app.delete('/api/fuel/:id', authenticate, requireAdmin, async (req, res) => {
 
 
 // --- DRIVERS / OWNERS / MECHANICS (generic CRUD) ---
-function crud(route, Model, readRoles) {
-  app.get(`/api/${route}`, authenticate, allowRoles(...readRoles), async (req, res) => {
+function crud(route, Model) {
+   app.get(`/api/${route}`, authenticate, requireAdmin, async (req, res) => {
     try { res.json(await Model.find().sort({ name: 1 })); } catch (err) { handleError(res, err); }
   });
   app.post(`/api/${route}`, authenticate, requireAdmin, async (req, res) => {
@@ -403,9 +340,6 @@ function crud(route, Model, readRoles) {
     } catch (err) { handleError(res, err); }
   });
 }
-crud('drivers', Driver, ['Admin', 'Owner']);
-crud('owners', Owner, ['Admin']);
-crud('mechanics', Mechanic, ['Admin', 'Owner']);
 crud('drivers', Driver);
 crud('owners', Owner);
 crud('mechanics', Mechanic);

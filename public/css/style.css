@@ -131,9 +131,3 @@ table tbody tr { transition: background .12s; } table tbody tr:hover { backgroun
 .brand-chips span { background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.3); padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
 .auth-footer { text-align: center; color: rgba(255, 255, 255, 0.8); font-size: 0.8rem; padding-bottom: 1.5rem; }
 table select { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); }
-@media print {
-  body * { visibility: hidden; }
-  #reportCard, #reportCard * { visibility: visible; }
-  #reportCard { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; border: none; }
-  .no-print { display: none !important; }
-}

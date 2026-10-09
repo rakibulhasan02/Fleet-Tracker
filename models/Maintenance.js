@@ -8,7 +8,6 @@ const MaintenanceSchema = new mongoose.Schema({
     required: true
   },
     mechanic: { type: String, default: '' },
-      status: { type: String, enum: ['Assigned', 'In Progress', 'Completed'], default: 'Completed' },
   date: { type: Date, default: Date.now },
   cost: { type: Number, default: 0, min: 0 },
   mileageAtService: { type: Number, min: 0 },
