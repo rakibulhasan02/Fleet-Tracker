@@ -39,6 +39,12 @@ if (loginForm) {
   };
 }
 
+const regRole = document.getElementById('regRole');
+if (regRole) {
+  regRole.onchange = () => {
+    document.getElementById('adminCodeGroup').classList.toggle('hidden', regRole.value !== 'Admin');
+  };
+}
 const registerForm = document.getElementById('registerForm');
 if (registerForm) {
   registerForm.onsubmit = async (e) => {
@@ -50,7 +56,8 @@ if (registerForm) {
         name: document.getElementById('regName').value,
         email: document.getElementById('regEmail').value,
         password: document.getElementById('regPassword').value,
-        role: document.getElementById('regRole').value
+                role: document.getElementById('regRole').value,
+        adminCode: document.getElementById('regAdminCode').value
       })
     });
     const data = await res.json();

@@ -72,26 +72,34 @@ const handleError = (res, err) => {
 
 // --- AUTH ROUTES ---
 
-// Register (public sign-up can never create an Admin, except the very first account)
+// Register: Admin needs the secret code (the very first account becomes Admin automatically)
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, adminCode } = req.body;
     if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ error: 'User already exists' });
 
     const isFirstUser = (await User.countDocuments()) === 0;
-    const publicRoles = ['Driver', 'Owner', 'Mechanic'];
-    const finalRole = isFirstUser ? 'Admin' : (publicRoles.includes(role) ? role : 'Driver');
+    const validRoles = ['Admin', 'Driver', 'Owner', 'Mechanic'];
+    let finalRole = validRoles.includes(role) ? role : 'Driver';
+
+    if (isFirstUser) {
+      finalRole = 'Admin';
+    } else if (finalRole === 'Admin') {
+      const secret = process.env.ADMIN_SIGNUP_CODE;
+      if (!secret || adminCode !== secret) {
+        return res.status(403).json({ error: 'Invalid Admin signup code' });
+      }
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     await User.create({ name, email, password: hashedPassword, role: finalRole });
-    res.status(201).json({ message: isFirstUser ? 'First account created as Admin' : 'User registered successfully' });
+    res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     handleError(res, err);
   }
 });
-
 // Login
 app.post('/api/auth/login', async (req, res) => {
   try {
