@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <nav class="navbar">
+  <nav class="navbar no-print">
     <h2><span>🚚</span> Fleet<span class="accent">Tracker</span></h2>
     <div class="nav-right">
       <span id="userInfo" class="user-chip"></span>
@@ -16,57 +16,66 @@
     </div>
   </nav>
 
-    <div class="container">
-    <div class="stats-grid" id="statsGrid"></div>
-    <div id="docAlert" class="alert hidden"></div>
+  <div class="container">
+    <div id="roleBanner" class="role-banner no-print"></div>
+    <div id="pendingAlert" class="alert hidden no-print"></div>
+    <div class="stats-grid no-print" id="statsGrid"></div>
+    <div id="docAlert" class="alert hidden no-print"></div>
 
-    <div class="chart-grid">
+    <div class="chart-grid no-print" data-roles="Admin,Owner">
       <div class="card"><h3>Fleet Status</h3><div class="chart-box"><canvas id="statusChart"></canvas></div></div>
       <div class="card"><h3>Monthly Spend (last 6 months)</h3><div class="chart-box"><canvas id="costChart"></canvas></div></div>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="vehicles">Vehicles</button>
-      <button class="tab" data-tab="documents">Documents</button>
+    <div class="tabs no-print">
+      <button class="tab" data-tab="vehicles">Vehicles</button>
+      <button class="tab" data-tab="repairs" data-roles="Admin,Mechanic">Repair Queue</button>
+      <button class="tab" data-tab="trips" data-roles="Admin,Owner,Driver">Trips</button>
+      <button class="tab" data-tab="problems">Problems</button>
+      <button class="tab" data-tab="documents" data-roles="Admin,Owner,Driver">Documents</button>
       <button class="tab" data-tab="maintenance">Maintenance</button>
-            <button class="tab" data-tab="fuel">Fuel</button>
-                  <button class="tab" data-tab="drivers">Drivers</button>
-      <button class="tab" data-tab="owners">Owners</button>
-      <button class="tab" data-tab="mechanics">Mechanics</button>
-            <button class="tab admin-only" data-tab="users">Users</button>
+      <button class="tab" data-tab="fuel" data-roles="Admin,Owner,Driver">Fuel</button>
+      <button class="tab" data-tab="reports" data-roles="Admin,Owner">Reports</button>
+      <button class="tab" data-tab="activity" data-roles="Admin">Activity</button>
+      <button class="tab" data-tab="drivers" data-roles="Admin">Drivers</button>
+      <button class="tab" data-tab="owners" data-roles="Admin">Owners</button>
+      <button class="tab" data-tab="mechanics" data-roles="Admin">Mechanics</button>
+      <button class="tab" data-tab="users" data-roles="Admin">Users</button>
     </div>
 
-    <section id="tab-vehicles">
-      <div class="card admin-only">
+    <!-- VEHICLES -->
+    <section id="tab-vehicles" class="hidden">
+      <div class="card" data-roles="Admin,Owner">
         <h3>Add New Vehicle</h3>
         <form id="vehicleForm" class="form-grid">
           <input type="text" id="vName" placeholder="Vehicle Name" required>
           <input type="text" id="vPlate" placeholder="Plate Number" required>
           <input type="text" id="vModel" placeholder="Model Year/Type" required>
           <input type="number" id="vMileage" placeholder="Mileage (km)" min="0" required>
-          <select id="vStatus">
-            <option value="Active">Active</option>
+          <select id="vStatus" title="Status">
+            <option value="Active">Active (Ready)</option>
             <option value="In Maintenance">In Maintenance</option>
             <option value="Out of Service">Out of Service</option>
           </select>
-                    <select id="vDriver"></select>
-          <select id="vOwner"></select>
+          <select id="vDriver" title="Assigned driver"></select>
+          <select id="vOwner" title="Owner" data-roles="Admin"></select>
           <button type="submit" class="btn span-2">Add Vehicle</button>
         </form>
       </div>
 
       <div class="card">
         <div class="toolbar">
-          <h3>Registered Fleet</h3>
+          <h3 id="vehiclesHeading">Registered Fleet</h3>
           <div class="toolbar-controls">
             <input type="search" id="vehicleSearch" placeholder="Search name, plate, driver...">
             <select id="vehicleFilter">
               <option value="">All statuses</option>
-              <option value="Active">Active</option>
+              <option value="Active">Active (Ready)</option>
+              <option value="Needs Repair">Needs Repair</option>
               <option value="In Maintenance">In Maintenance</option>
               <option value="Out of Service">Out of Service</option>
             </select>
-            <button id="exportBtn" class="btn btn-secondary">Export CSV</button>
+            <button id="exportBtn" class="btn btn-secondary" data-roles="Admin,Owner">Export CSV</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -74,7 +83,7 @@
             <thead>
               <tr>
                 <th>Name</th><th>Plate Number</th><th>Model</th><th>Mileage</th>
-                <th>Status</th><th>Driver</th><th>Owner</th><th class="admin-only">Actions</th>
+                <th>Status</th><th>Driver</th><th>Owner</th><th>Location</th><th data-roles="Admin,Owner">Actions</th>
               </tr>
             </thead>
             <tbody id="vehicleTableBody"></tbody>
@@ -83,8 +92,106 @@
       </div>
     </section>
 
+    <!-- REPAIR QUEUE (mechanic) -->
+    <section id="tab-repairs" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>🔧 Vehicles Needing Repair</h3>
+          <strong id="repairSummary"></strong>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Vehicle</th><th>Status</th><th>Mileage</th><th>Driver</th><th>Reported problems</th><th>Actions</th></tr></thead>
+            <tbody id="repairTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRIPS -->
+    <section id="tab-trips" class="hidden">
+      <div class="card">
+        <h3 id="tripFormTitle">Create Trip</h3>
+        <form id="tripForm" class="form-grid">
+          <select id="tPlate" required title="Vehicle"></select>
+          <select id="tDriver" title="Driver" data-roles="Admin,Owner"></select>
+          <input type="text" id="tOrigin" placeholder="From (origin)" required>
+          <input type="text" id="tDest" placeholder="To (destination)" required>
+          <input type="text" id="tPurpose" placeholder="Purpose / load (optional)" class="span-2">
+          <button type="submit" class="btn span-2" id="tripSubmit">Create Trip</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3 id="tripHeading">Trips</h3>
+          <div class="toolbar-controls">
+            <select id="tripFilter">
+              <option value="">All trips</option>
+              <option value="Assigned">Assigned</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Delayed">Delayed</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <p id="tripNote" class="note hidden" data-roles="Driver">📍 While a trip is in progress, this page shares your location with the fleet (your browser will ask permission).</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Vehicle</th><th>Driver</th><th>Route</th><th>Status</th><th>Started</th><th>Completed</th><th>Distance</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody id="tripTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROBLEMS -->
+    <section id="tab-problems" class="hidden">
+      <div class="card" data-roles="Admin,Owner,Driver">
+        <h3>🚨 Report an Accident or Vehicle Problem</h3>
+        <form id="incidentForm" class="form-grid">
+          <select id="iPlate" required title="Vehicle"></select>
+          <select id="iType" title="Type">
+            <option>Accident</option>
+            <option>Breakdown</option>
+            <option>Mechanical Problem</option>
+            <option>Electrical Problem</option>
+            <option>Tires / Brakes</option>
+            <option>Other</option>
+          </select>
+          <select id="iSeverity" title="Severity">
+            <option>Low</option>
+            <option selected>Medium</option>
+            <option>High</option>
+          </select>
+          <input type="text" id="iDesc" placeholder="What happened? (required)" required>
+          <button type="submit" class="btn span-2">Submit Report</button>
+        </form>
+        <p class="note">Reporting a problem marks the vehicle <strong>Needs Repair</strong> so a mechanic can pick it up.</p>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h3 id="problemHeading">Problem Reports</h3>
+          <div class="toolbar-controls">
+            <select id="incidentFilter">
+              <option value="open">Open only</option>
+              <option value="">All reports</option>
+              <option value="Resolved">Resolved</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th>Severity</th><th>Reported by</th><th>Description</th><th>Status</th><th>Mechanic notes</th><th data-roles="Admin,Mechanic">Actions</th></tr></thead>
+            <tbody id="incidentTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- DOCUMENTS -->
     <section id="tab-documents" class="hidden">
-      <div class="card admin-only">
+      <div class="card" data-roles="Admin,Owner">
         <h3>Add Vehicle Document</h3>
         <form id="documentForm" class="form-grid">
           <select id="dPlate" required></select>
@@ -104,7 +211,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Vehicle</th><th>Type</th><th>Title</th><th>Expires</th><th>Status</th><th class="admin-only">Actions</th></tr>
+              <tr><th>Vehicle</th><th>Type</th><th>Title</th><th>Expires</th><th>Status</th><th data-roles="Admin,Owner">Actions</th></tr>
             </thead>
             <tbody id="documentTableBody"></tbody>
           </table>
@@ -112,12 +219,13 @@
       </div>
     </section>
 
+    <!-- MAINTENANCE -->
     <section id="tab-maintenance" class="hidden">
-      <div class="card">
-        <h3>Log Maintenance</h3>
+      <div class="card" data-roles="Admin,Mechanic">
+        <h3>Record a Repair / Service</h3>
         <form id="maintenanceForm" class="form-grid">
-          <select id="mPlate" required></select>
-          <select id="mType" required>
+          <select id="mPlate" required title="Vehicle"></select>
+          <select id="mType" required title="Service type">
             <option>Oil Change</option>
             <option>Tire Service</option>
             <option>Brake Service</option>
@@ -125,32 +233,45 @@
             <option>Repair</option>
             <option>Other</option>
           </select>
-                    <select id="mMechanic"></select>
+          <select id="mMechanic" title="Mechanic" data-roles="Admin"></select>
           <input type="date" id="mDate" required title="Service date">
-          <input type="number" id="mCost" placeholder="Cost" min="0" step="0.01">
+          <input type="number" id="mLabor" name="laborCost" placeholder="Labor / service cost" min="0" step="0.01">
           <input type="number" id="mMileage" placeholder="Mileage at service (km)" min="0">
-          <input type="text" id="mNotes" placeholder="Notes (optional)">
-          <button type="submit" class="btn span-2">Log Service</button>
+          <select id="mIncident" title="Related problem report"></select>
+          <select id="mAfter" title="Vehicle status after this job">
+            <option value="">Vehicle status: leave as is</option>
+            <option value="In Maintenance">Mark: Under Maintenance (still working)</option>
+            <option value="Active">Mark: Ready (repair complete)</option>
+          </select>
+          <input type="text" id="mNotes" placeholder="Notes / what was done (optional)" class="span-2">
+          <div class="span-2 parts-editor">
+            <label class="field-label">Replaced parts</label>
+            <div class="parts-box"></div>
+            <div class="parts-foot"><button type="button" class="btn btn-secondary btn-sm" data-add-part>+ Add part</button><strong class="total-preview"></strong></div>
+          </div>
+          <button type="submit" class="btn span-2">Save Repair Record</button>
         </form>
       </div>
       <div class="card">
         <div class="toolbar">
-          <h3>Maintenance History</h3>
+          <h3 id="maintenanceHeading">Maintenance History</h3>
           <strong id="maintenanceTotal"></strong>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Date</th><th>Vehicle</th><th>Service</th><th>Cost</th><th>Mileage</th><th>Notes</th><th>Logged By</th><th class="admin-only">Actions</th></tr>
+              <tr><th>Date</th><th>Vehicle</th><th>Service</th><th>Mechanic</th><th>Parts replaced</th><th>Cost</th><th>Mileage</th><th>Notes</th><th>Logged By</th><th data-roles="Admin,Mechanic">Actions</th></tr>
             </thead>
             <tbody id="maintenanceTableBody"></tbody>
           </table>
         </div>
       </div>
     </section>
-        <section id="tab-fuel" class="hidden">
-      <div class="card">
-        <h3>Log Fuel</h3>
+
+    <!-- FUEL -->
+    <section id="tab-fuel" class="hidden">
+      <div class="card" data-roles="Admin,Driver">
+        <h3>Submit Fuel Record</h3>
         <form id="fuelForm" class="form-grid">
           <select id="fPlate" required></select>
           <input type="date" id="fDate" required title="Fill-up date">
@@ -169,24 +290,80 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Date</th><th>Vehicle</th><th>Liters</th><th>Cost</th><th>Price/L</th><th>Odometer</th><th>Station</th><th>Logged By</th><th class="admin-only">Actions</th></tr>
+              <tr><th>Date</th><th>Vehicle</th><th>Liters</th><th>Cost</th><th>Price/L</th><th>Odometer</th><th>Station</th><th>Logged By</th><th data-roles="Admin">Actions</th></tr>
             </thead>
             <tbody id="fuelTableBody"></tbody>
           </table>
         </div>
       </div>
     </section>
-        <section id="tab-drivers" class="hidden"></section>
-    <section id="tab-owners" class="hidden"></section>
-    <section id="tab-mechanics" class="hidden"></section>
-        <section id="tab-users" class="hidden admin-only">
+
+    <!-- REPORTS -->
+    <section id="tab-reports" class="hidden">
       <div class="card">
-        <h3>👥 User Accounts</h3>
-        <p style="color: var(--muted); margin: 0.25rem 0 0.5rem;">Only an Admin can change roles. New sign-ups start as Driver, Owner or Mechanic.</p>
+        <div class="toolbar no-print">
+          <h3>📊 Fleet Report</h3>
+          <div class="toolbar-controls">
+            <input type="date" id="reportFrom" title="From">
+            <input type="date" id="reportTo" title="To">
+            <button id="reportRun" class="btn">Generate</button>
+            <button id="reportCsv" class="btn btn-secondary">Export CSV</button>
+            <button id="reportPrint" class="btn btn-secondary">Print</button>
+          </div>
+        </div>
+        <p id="reportPeriod" class="note"></p>
+        <div class="stats-grid" id="reportTiles"></div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr>
+              <tr><th>Vehicle</th><th>Status</th><th>Trips</th><th>Distance</th><th>Fuel (L)</th><th>Fuel cost</th><th>Maintenance</th><th>Total cost</th><th>Cost / km</th><th>Problems</th></tr>
+            </thead>
+            <tbody id="reportBody"></tbody>
+            <tfoot id="reportFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section id="tab-activity" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>🕒 Fleet Activity</h3>
+          <div class="toolbar-controls"><input type="search" id="activitySearch" placeholder="Search user, action, vehicle..."></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>When</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
+            <tbody id="activityBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-drivers" class="hidden"></section>
+    <section id="tab-owners" class="hidden"></section>
+    <section id="tab-mechanics" class="hidden"></section>
+
+    <!-- USERS -->
+    <section id="tab-users" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>👥 User Accounts</h3>
+          <div class="toolbar-controls">
+            <select id="userFilter">
+              <option value="">All accounts</option>
+              <option value="Pending">Pending approval</option>
+              <option value="Approved">Approved</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+        </div>
+        <p class="note">New Driver, Owner and Mechanic sign-ups stay <strong>Pending</strong> until you approve them. Only an Admin can approve, reject or change roles.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr>
             </thead>
             <tbody id="userTableBody"></tbody>
           </table>
@@ -195,7 +372,8 @@
     </section>
   </div>
 
-    <div id="editModal" class="modal hidden">
+  <!-- Vehicle edit modal -->
+  <div id="editModal" class="modal hidden">
     <div class="modal-content card">
       <h3>Edit Vehicle</h3>
       <form id="editForm" class="form-grid">
@@ -205,18 +383,28 @@
         <input type="text" id="eModel" placeholder="Model Year/Type" required>
         <input type="number" id="eMileage" placeholder="Mileage (km)" min="0" required>
         <select id="eStatus">
-          <option value="Active">Active</option>
+          <option value="Active">Active (Ready)</option>
+          <option value="Needs Repair">Needs Repair</option>
           <option value="In Maintenance">In Maintenance</option>
           <option value="Out of Service">Out of Service</option>
         </select>
-                <select id="eDriver"></select>
-        <select id="eOwner"></select>
+        <select id="eDriver" title="Assigned driver"></select>
+        <select id="eOwner" title="Owner" data-roles="Admin"></select>
         <button type="submit" class="btn">Save Changes</button>
         <button type="button" id="editCancel" class="btn btn-secondary">Cancel</button>
       </form>
     </div>
   </div>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Generic action modal (trip start / complete, problem update, repair edit ...) -->
+  <div id="formModal" class="modal hidden">
+    <div class="modal-content card">
+      <h3 id="fmTitle"></h3>
+      <form id="fmForm" class="form-grid"></form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
